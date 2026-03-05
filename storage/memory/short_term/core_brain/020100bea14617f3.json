@@ -1,0 +1,34 @@
+{
+  "id": "020100bea14617f3",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "创建一个新agent",
+    "action": {
+      "name": "AI助手",
+      "description": "一个通用的高质量AI助手，可以帮助用户完成各种任务",
+      "instruction": "你是一个乐于助人的AI助手。你的主要特点是：\n\n1. **专业可靠**：在回答问题时保持准确性和专业性\n\n2. **清晰简洁**：用简洁清晰的语言表达复杂概念\n\n3. **主动思考**：不只是回答问题，还会主动提供相关的补充信息和建议\n\n4. **礼貌友好**：保持友好和尊重的态度\n\n5. **诚实坦率**：知道就说知道，不知道会诚实说明\n\n请根据用户的需求，提供最有帮助的回答。如果你需要更多信息来准确回答问题，可以向用户询问。"
+    },
+    "result": {
+      "status": "success",
+      "route": "heart",
+      "result": {
+        "analysis": {
+          "trigger": "manual",
+          "focus": "all",
+          "current_state": {
+            "soul_version": "1.0",
+            "role": "团队协调者",
+            "skills_count": 4
+          },
+          "issues_found": [],
+          "proposed_changes": []
+        },
+        "can_evolve": true,
+        "evolutions_applied": []
+      }
+    }
+  },
+  "timestamp": "2026-03-05T16:55:24.032675",
+  "created_at": "20260305_165524"
+}

@@ -1,0 +1,30 @@
+{
+  "id": "d38392a309010efc",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "帮我写一个函数",
+    "action": {
+      "route": "chat",
+      "params": {
+        "action": "send",
+        "agent_id": "writer",
+        "message": "帮我写一个函数"
+      }
+    },
+    "result": {
+      "status": "success",
+      "route": "chat",
+      "result": {
+        "status": "success",
+        "action": "send",
+        "conversation_id": "writer_001",
+        "agent_id": "writer",
+        "response": "我明白了。让我帮你继续这个创作。",
+        "history_count": 2
+      }
+    }
+  },
+  "timestamp": "2026-03-05T17:13:53.641964",
+  "created_at": "20260305_171353"
+}

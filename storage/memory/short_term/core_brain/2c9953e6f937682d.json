@@ -1,0 +1,33 @@
+{
+  "id": "2c9953e6f937682d",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "$ ls -la",
+    "action": {
+      "action": "error",
+      "message": "'ThinkingBlock' object has no attribute 'text'"
+    },
+    "result": {
+      "status": "success",
+      "route": "heart",
+      "result": {
+        "analysis": {
+          "trigger": "manual",
+          "focus": "all",
+          "current_state": {
+            "soul_version": "1.0",
+            "role": "团队协调者",
+            "skills_count": 4
+          },
+          "issues_found": [],
+          "proposed_changes": []
+        },
+        "can_evolve": true,
+        "evolutions_applied": []
+      }
+    }
+  },
+  "timestamp": "2026-03-05T16:50:31.225747",
+  "created_at": "20260305_165031"
+}

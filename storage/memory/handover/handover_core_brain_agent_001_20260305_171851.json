@@ -1,0 +1,10 @@
+{
+  "id": "handover_core_brain_agent_001_20260305_171851",
+  "from_agent": "core_brain",
+  "to_agent": "agent_001",
+  "content": {
+    "task": "test task"
+  },
+  "timestamp": "2026-03-05T17:18:51.679770",
+  "status": "pending"
+}

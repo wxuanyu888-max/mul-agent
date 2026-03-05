@@ -1,0 +1,28 @@
+{
+  "id": "9c436513667ddff9",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "ls /tmp",
+    "action": {
+      "route": "bash",
+      "params": {
+        "command": "ls -la /tmp"
+      },
+      "response": "/tmp 目录的内容如下："
+    },
+    "result": {
+      "status": "success",
+      "route": "bash",
+      "result": {
+        "stdout": "lrwxr-xr-x@ 1 root  wheel  11 Mar 27  2025 /tmp -> private/tmp\n",
+        "stderr": "",
+        "exit_code": 0,
+        "duration": 0.02178478240966797
+      },
+      "response": "/tmp 目录的内容如下："
+    }
+  },
+  "timestamp": "2026-03-05T16:53:22.840982",
+  "created_at": "20260305_165322"
+}

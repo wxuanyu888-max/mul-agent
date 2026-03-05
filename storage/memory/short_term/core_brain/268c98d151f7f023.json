@@ -1,0 +1,25 @@
+{
+  "id": "268c98d151f7f023",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "查看记忆",
+    "action": {
+      "route": "memory",
+      "params": {},
+      "response": "<minimax:tool_call>\n<invoke name=\"memory\">\n<parameter name=\"action\">view</parameter>\n</invoke>\n</minimax:tool_call>"
+    },
+    "result": {
+      "status": "success",
+      "route": "memory",
+      "result": {
+        "action": "read",
+        "memory": null,
+        "status": "success"
+      },
+      "response": "<minimax:tool_call>\n<invoke name=\"memory\">\n<parameter name=\"action\">view</parameter>\n</invoke>\n</minimax:tool_call>"
+    }
+  },
+  "timestamp": "2026-03-05T17:02:25.171698",
+  "created_at": "20260305_170225"
+}

@@ -1,0 +1,27 @@
+{
+  "id": "5df828b61a973402",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "what do you remember?",
+    "action": {
+      "route": "memory",
+      "params": {
+        "action": "list",
+        "memory_type": "long_term"
+      }
+    },
+    "result": {
+      "status": "success",
+      "route": "memory",
+      "result": {
+        "action": "list",
+        "count": 0,
+        "memories": [],
+        "status": "success"
+      }
+    }
+  },
+  "timestamp": "2026-03-05T16:55:36.200808",
+  "created_at": "20260305_165536"
+}

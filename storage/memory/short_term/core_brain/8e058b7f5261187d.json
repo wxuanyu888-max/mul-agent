@@ -1,0 +1,30 @@
+{
+  "id": "8e058b7f5261187d",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "创建一个新的coder agent",
+    "action": {
+      "route": "create_user",
+      "params": {
+        "name": "coder",
+        "role_type": "worker"
+      },
+      "response": "正在创建 coder agent..."
+    },
+    "result": {
+      "status": "success",
+      "route": "create_user",
+      "result": {
+        "agent_id": "agent_883bfea0",
+        "name": "coder",
+        "role_type": "worker",
+        "status": "pending",
+        "message": "Agent agent_883bfea0 ready to be created"
+      },
+      "response": "正在创建 coder agent..."
+    }
+  },
+  "timestamp": "2026-03-05T17:48:17.430139",
+  "created_at": "20260305_174817"
+}

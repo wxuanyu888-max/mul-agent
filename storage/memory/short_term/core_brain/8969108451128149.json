@@ -1,0 +1,38 @@
+{
+  "id": "8969108451128149",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "create a new worker agent named developer",
+    "action": {
+      "route": "heart",
+      "params": {
+        "trigger": "manual",
+        "focus": "status"
+      },
+      "response": "\n<minimax:tool_call>\n<invoke name=\"create_user\">\n<parameter name=\"role\">developer</parameter>\n<parameter name=\"name\">developer</parameter>\n<parameter name=\"description\">专业的开发者Agent，擅长代码编写、调试和软件开发。可以执行"
+    },
+    "result": {
+      "status": "success",
+      "route": "heart",
+      "result": {
+        "analysis": {
+          "trigger": "manual",
+          "focus": "status",
+          "current_state": {
+            "soul_version": "1.0",
+            "role": "团队协调者",
+            "skills_count": 4
+          },
+          "issues_found": [],
+          "proposed_changes": []
+        },
+        "can_evolve": true,
+        "evolutions_applied": []
+      },
+      "response": "\n<minimax:tool_call>\n<invoke name=\"create_user\">\n<parameter name=\"role\">developer</parameter>\n<parameter name=\"name\">developer</parameter>\n<parameter name=\"description\">专业的开发者Agent，擅长代码编写、调试和软件开发。可以执行"
+    }
+  },
+  "timestamp": "2026-03-05T16:52:15.890952",
+  "created_at": "20260305_165215"
+}

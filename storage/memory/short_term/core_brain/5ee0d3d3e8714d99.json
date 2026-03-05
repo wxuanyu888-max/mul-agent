@@ -1,0 +1,34 @@
+{
+  "id": "5ee0d3d3e8714d99",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "创建一个新agent",
+    "action": {
+      "name": "新助手",
+      "description": "一个通用的AI助手，可以帮助用户完成各种任务，如回答问题、提供建议、协助解决问题等。",
+      "instructions": "1. 始终以专业、友好的态度回应用户\n2. 提供准确、有用的信息\n3. 如果遇到不确定的问题，明确说明\n4. 保持清晰的沟通风格\n5. 尊重用户隐私和需求"
+    },
+    "result": {
+      "status": "success",
+      "route": "heart",
+      "result": {
+        "analysis": {
+          "trigger": "manual",
+          "focus": "all",
+          "current_state": {
+            "soul_version": "1.0",
+            "role": "团队协调者",
+            "skills_count": 4
+          },
+          "issues_found": [],
+          "proposed_changes": []
+        },
+        "can_evolve": true,
+        "evolutions_applied": []
+      }
+    }
+  },
+  "timestamp": "2026-03-05T16:56:19.090609",
+  "created_at": "20260305_165619"
+}

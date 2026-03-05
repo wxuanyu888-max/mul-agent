@@ -1,0 +1,37 @@
+{
+  "id": "20e44d6a4991d809",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "自省",
+    "action": {
+      "route": "heart",
+      "params": {
+        "focus": "all"
+      },
+      "response": "正在进行深度自省..."
+    },
+    "result": {
+      "status": "success",
+      "route": "heart",
+      "result": {
+        "analysis": {
+          "trigger": "manual",
+          "focus": "all",
+          "current_state": {
+            "soul_version": "1.0",
+            "role": "团队协调者",
+            "skills_count": 4
+          },
+          "issues_found": [],
+          "proposed_changes": []
+        },
+        "can_evolve": true,
+        "evolutions_applied": []
+      },
+      "response": "正在进行深度自省..."
+    }
+  },
+  "timestamp": "2026-03-05T17:23:56.667978",
+  "created_at": "20260305_172356"
+}

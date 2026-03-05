@@ -1,0 +1,24 @@
+{
+  "id": "e968ddec76a61944",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "你好",
+    "action": {
+      "route": "response",
+      "params": {
+        "message": "你好！我是团队协调者，很高兴为你服务。我可以帮助你协调团队、管理任务、执行命令等工作。请问有什么我可以帮你的？"
+      }
+    },
+    "result": {
+      "status": "success",
+      "route": "response",
+      "result": {
+        "message": "你好！我是团队协调者，很高兴为你服务。我可以帮助你协调团队、管理任务、执行命令等工作。请问有什么我可以帮你的？",
+        "type": "direct_response"
+      }
+    }
+  },
+  "timestamp": "2026-03-05T17:24:06.091273",
+  "created_at": "20260305_172406"
+}

@@ -1,0 +1,51 @@
+{
+  "id": "b89b9443bb731906",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "查看我的记忆",
+    "action": {
+      "route": "memory",
+      "params": {
+        "action": "list",
+        "memory_type": "long_term"
+      },
+      "response": "正在为您查看长期记忆..."
+    },
+    "result": {
+      "status": "success",
+      "route": "memory",
+      "result": {
+        "action": "list",
+        "count": 2,
+        "memories": [
+          {
+            "id": "de9ba9c1d13b9a52",
+            "agent_id": "core_brain",
+            "type": "long_term",
+            "content": {
+              "title": "测试记忆",
+              "data": "这是测试内容"
+            },
+            "timestamp": "2026-03-05T17:08:29.630243",
+            "created_at": "20260305_170829"
+          },
+          {
+            "id": "9c0a3a531e173299",
+            "agent_id": "core_brain",
+            "type": "long_term",
+            "content": {
+              "test": "report"
+            },
+            "timestamp": "2026-03-05T17:03:50.524370",
+            "created_at": "20260305_170350"
+          }
+        ],
+        "status": "success"
+      },
+      "response": "正在为您查看长期记忆..."
+    }
+  },
+  "timestamp": "2026-03-05T17:13:57.975921",
+  "created_at": "20260305_171357"
+}

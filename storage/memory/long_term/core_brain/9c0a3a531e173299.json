@@ -1,0 +1,10 @@
+{
+  "id": "9c0a3a531e173299",
+  "agent_id": "core_brain",
+  "type": "long_term",
+  "content": {
+    "test": "report"
+  },
+  "timestamp": "2026-03-05T17:03:50.524370",
+  "created_at": "20260305_170350"
+}

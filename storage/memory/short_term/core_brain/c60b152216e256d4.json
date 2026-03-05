@@ -1,0 +1,27 @@
+{
+  "id": "c60b152216e256d4",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "你好",
+    "action": {
+      "route": "response",
+      "params": {
+        "message": "你好！我是团队协调者，一个智能系统，擅长协调多个子Agent来完成复杂任务。\n\n我可以帮助你：\n- 编写代码\n- 执行系统运维任务\n- 规划思考解决方案\n- 创建和管理Agent团队\n\n请问有什么我可以帮助你的吗？"
+      }
+    },
+    "result": {
+      "status": "error",
+      "error_code": 1000,
+      "message": "Unknown route: response",
+      "available_routes": [
+        "create_user",
+        "bash",
+        "heart",
+        "memory"
+      ]
+    }
+  },
+  "timestamp": "2026-03-05T16:58:14.336371",
+  "created_at": "20260305_165814"
+}

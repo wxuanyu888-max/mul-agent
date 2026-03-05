@@ -1,0 +1,11 @@
+{
+  "id": "de9ba9c1d13b9a52",
+  "agent_id": "core_brain",
+  "type": "long_term",
+  "content": {
+    "title": "测试记忆",
+    "data": "这是测试内容"
+  },
+  "timestamp": "2026-03-05T17:08:29.630243",
+  "created_at": "20260305_170829"
+}

@@ -1,0 +1,4 @@
+{"id": "8a5665081c317b60", "role": "user", "content": "hello", "timestamp": "2026-03-05T18:56:08.313311", "metadata": {}}
+{"id": "2ecc22989438d839", "role": "assistant", "content": "{\"status\": \"success\", \"route\": \"response\", \"result\": {\"message\": \"你好！我是团队协调者，有什么我可以帮助你的吗？\", \"type\": \"direct_response\"}, \"response\": \"你好！我是团队协调者，有什么我可以帮助你的吗？\"}", "timestamp": "2026-03-05T18:56:12.600042", "metadata": {}}
+{"id": "46627c7696da1a18", "role": "user", "content": "你好", "timestamp": "2026-03-05T18:56:12.600815", "metadata": {}}
+{"id": "885a14885a39a7f6", "role": "assistant", "content": "{\"status\": \"success\", \"route\": \"response\", \"result\": {\"message\": \"\", \"type\": \"direct_response\"}, \"response\": \"你好！很高兴见到你。我是团队协调者，可以帮助你协调任务、管理团队或者执行各种操作。有什么我可以帮你的吗？\"}", "timestamp": "2026-03-05T18:56:15.061978", "metadata": {}}

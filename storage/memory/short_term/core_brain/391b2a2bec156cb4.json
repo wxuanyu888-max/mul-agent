@@ -1,0 +1,38 @@
+{
+  "id": "391b2a2bec156cb4",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "ls /tmp",
+    "action": {
+      "route": "heart",
+      "params": {
+        "trigger": "manual",
+        "focus": "status"
+      },
+      "response": "<minimax:tool_call>\n<invoke name=\"bash\">\n<parameter name=\"command\">ls /tmp</parameter>\n</invoke>\n</minimax:tool_call>"
+    },
+    "result": {
+      "status": "success",
+      "route": "heart",
+      "result": {
+        "analysis": {
+          "trigger": "manual",
+          "focus": "status",
+          "current_state": {
+            "soul_version": "1.0",
+            "role": "团队协调者",
+            "skills_count": 4
+          },
+          "issues_found": [],
+          "proposed_changes": []
+        },
+        "can_evolve": true,
+        "evolutions_applied": []
+      },
+      "response": "<minimax:tool_call>\n<invoke name=\"bash\">\n<parameter name=\"command\">ls /tmp</parameter>\n</invoke>\n</minimax:tool_call>"
+    }
+  },
+  "timestamp": "2026-03-05T16:59:49.802186",
+  "created_at": "20260305_165949"
+}

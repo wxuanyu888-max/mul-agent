@@ -1,0 +1,38 @@
+{
+  "id": "81624e414831c2e8",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "创建新agent",
+    "action": {
+      "route": "heart",
+      "params": {
+        "trigger": "manual",
+        "focus": "status"
+      },
+      "response": "<minimax:tool_call>\n<invoke name=\"create_user\">\n<parameter name=\"name\">新Agent</parameter>\n<parameter name=\"description\">这是一个新创建的Agent</parameter>\n</invoke>\n</minimax:tool_call>"
+    },
+    "result": {
+      "status": "success",
+      "route": "heart",
+      "result": {
+        "analysis": {
+          "trigger": "manual",
+          "focus": "status",
+          "current_state": {
+            "soul_version": "1.0",
+            "role": "团队协调者",
+            "skills_count": 4
+          },
+          "issues_found": [],
+          "proposed_changes": []
+        },
+        "can_evolve": true,
+        "evolutions_applied": []
+      },
+      "response": "<minimax:tool_call>\n<invoke name=\"create_user\">\n<parameter name=\"name\">新Agent</parameter>\n<parameter name=\"description\">这是一个新创建的Agent</parameter>\n</invoke>\n</minimax:tool_call>"
+    }
+  },
+  "timestamp": "2026-03-05T16:54:59.745179",
+  "created_at": "20260305_165459"
+}

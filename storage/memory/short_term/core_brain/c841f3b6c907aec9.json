@@ -1,0 +1,30 @@
+{
+  "id": "c841f3b6c907aec9",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "我想和你聊天",
+    "action": {
+      "route": "chat",
+      "params": {
+        "action": "send",
+        "agent_id": "core_brain",
+        "message": "我想和你聊天"
+      }
+    },
+    "result": {
+      "status": "success",
+      "route": "chat",
+      "result": {
+        "status": "success",
+        "action": "send",
+        "conversation_id": "core_brain_001",
+        "agent_id": "core_brain",
+        "response": "我明白了。请告诉我更多细节，这样我可以更好地帮助你。",
+        "history_count": 2
+      }
+    }
+  },
+  "timestamp": "2026-03-05T17:05:46.977453",
+  "created_at": "20260305_170546"
+}

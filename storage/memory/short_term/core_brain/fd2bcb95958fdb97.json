@@ -1,0 +1,36 @@
+{
+  "id": "fd2bcb95958fdb97",
+  "agent_id": "core_brain",
+  "type": "short_term",
+  "content": {
+    "input": "你好",
+    "action": {
+      "route": "heart",
+      "params": {
+        "trigger": "automatic",
+        "focus": "all"
+      }
+    },
+    "result": {
+      "status": "success",
+      "route": "heart",
+      "result": {
+        "analysis": {
+          "trigger": "automatic",
+          "focus": "all",
+          "current_state": {
+            "soul_version": "1.0",
+            "role": "团队协调者",
+            "skills_count": 4
+          },
+          "issues_found": [],
+          "proposed_changes": []
+        },
+        "can_evolve": true,
+        "evolutions_applied": []
+      }
+    }
+  },
+  "timestamp": "2026-03-05T16:44:56.830049",
+  "created_at": "20260305_164456"
+}
