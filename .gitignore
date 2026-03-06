@@ -1,0 +1,74 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Python build
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.venv
+venv/
+ENV/
+
+# Logs
+*.log
+
+# ===== STORAGE - Runtime data =====
+# These are agent memory and conversation data - DO NOT COMMIT
+
+# Memory files (short-term and long-term) - auto-generated
+storage/memory/short_term/core_brain/*.md
+storage/memory/short_term/core_brain/*.json
+storage/memory/short_term/*/
+storage/memory/long_term/core_brain/*.json
+storage/memory/long_term/*/
+!storage/memory/long_term/core_brain/learning_001.md
+
+# Handover memory
+storage/memory/handover/*.md
+storage/memory/handover/*.json
+
+# Snapshots
+storage/snapshots/*.md
+
+# Conversation history
+storage/conversations/*/
+
+# Agent configs (auto-generated)
+storage/agent_config/*.json
+storage/agent_config/*/*.json
+
+# Logs
+storage/logs/*.log
+storage/logs/*.jsonl
+storage/info/*.json
+
+# Global storage (auto-generated)
+storage/global/
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/src/components/logs/
