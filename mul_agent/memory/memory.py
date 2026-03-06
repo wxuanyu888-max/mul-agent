@@ -68,13 +68,21 @@ class Memory:
             body_start = yaml_match.end()
             body = content[body_start:].strip()
 
-            return {
+            result = {
                 "id": metadata.get("id", ""),
                 "agent_id": metadata.get("agent_id", ""),
                 "type": metadata.get("type", ""),
                 "timestamp": metadata.get("timestamp", ""),
                 "content": body
             }
+            # 添加 handover 特有字段
+            if "from_agent" in metadata:
+                result["from_agent"] = metadata["from_agent"]
+            if "to_agent" in metadata:
+                result["to_agent"] = metadata["to_agent"]
+            if "status" in metadata:
+                result["status"] = metadata["status"]
+            return result
         except Exception:
             return None
 
@@ -183,9 +191,19 @@ class Memory:
         all_memories.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return all_memories[:limit]
 
-    def search(self, query: str, memory_type: Optional[str] = None) -> List[Dict]:
-        """搜索记忆"""
+    def search(self, query: str, memory_type: Optional[str] = None, limit: int = 20) -> List[Dict]:
+        """搜索记忆 - 增强版
+
+        Args:
+            query: 搜索关键词
+            memory_type: 记忆类型，None 表示搜索所有类型
+            limit: 返回结果数量限制
+
+        Returns:
+            匹配的记忆列表，按相关度排序
+        """
         results = []
+        query_lower = query.lower()
 
         types = [memory_type] if memory_type else ["short_term", "long_term", "handover"]
 
@@ -194,12 +212,79 @@ class Memory:
                 try:
                     memory = self._parse_md_file(memory_file)
                     if memory:
-                        # Search in content
+                        # Search in content and metadata
                         content = memory.get("content", "")
-                        if query.lower() in content.lower():
+                        content_lower = content.lower()
+
+                        # 计算相关度评分
+                        relevance_score = 0
+
+                        # 完全匹配 - 最高分
+                        if query_lower in content_lower:
+                            relevance_score += 100
+
+                        # 关键词匹配 - 部分分数
+                        query_words = query_lower.split()
+                        for word in query_words:
+                            if word in content_lower:
+                                relevance_score += 10
+
+                        # 也搜索 metadata
+                        for key, value in memory.items():
+                            if key not in ["content", "id", "agent_id", "timestamp"]:
+                                value_str = str(value).lower()
+                                if query_lower in value_str:
+                                    relevance_score += 20
+                                for word in query_words:
+                                    if word in value_str:
+                                        relevance_score += 5
+
+                        if relevance_score > 0:
+                            memory["relevance_score"] = relevance_score
+                            memory["memory_type"] = mt
                             results.append(memory)
+
                 except Exception:
                     continue
+
+        # 按相关度排序
+        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+        return results[:limit]
+
+    def search_enhanced(self, query: str, filters: Optional[Dict] = None) -> List[Dict]:
+        """增强搜索 - 支持过滤和更智能的匹配
+
+        Args:
+            query: 搜索关键词
+            filters: 过滤条件，如 {"date_from": "2024-01-01", "agent_id": "core_brain"}
+
+        Returns:
+            匹配的记忆列表
+        """
+        results = self.search(query)
+
+        # 应用过滤器
+        if filters:
+            filtered = []
+            for r in results:
+                match = True
+                for key, value in filters.items():
+                    if key == "date_from":
+                        if r.get("timestamp", "") < value:
+                            match = False
+                    elif key == "date_to":
+                        if r.get("timestamp", "") > value:
+                            match = False
+                    elif key == "agent_id":
+                        if r.get("agent_id") != value:
+                            match = False
+                    elif key == "memory_type":
+                        if r.get("memory_type") != value:
+                            match = False
+                if match:
+                    filtered.append(r)
+            results = filtered
 
         return results
 

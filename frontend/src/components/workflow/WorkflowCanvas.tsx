@@ -36,6 +36,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { infoApi, logsApi } from '../../services/api';
+import { ProjectSwitcher } from '../project/ProjectSwitcher';
 
 // Apple 风格节点颜色
 const nodeColors = {
@@ -190,7 +191,7 @@ const CustomEdgeComponent = memo(function CustomEdge({
     default: '#d2d2d7',
   };
 
-  const strokeColor = strokeColors[edgeData.type || 'default'] || strokeColors.default;
+  const strokeColor = edgeData?.type ? (strokeColors[edgeData.type] || strokeColors.default) : strokeColors.default;
 
   return (
     <>
@@ -201,8 +202,8 @@ const CustomEdgeComponent = memo(function CustomEdge({
           strokeWidth: 2,
           stroke: strokeColor,
           fill: 'none',
-          strokeDasharray: edgeData.type ? '5,5' : 'none',
-          animation: edgeData.type ? 'dashAnimation 1s linear infinite' : 'none',
+          strokeDasharray: edgeData?.type ? '5,5' : 'none',
+          animation: edgeData?.type ? 'dashAnimation 1s linear infinite' : 'none',
         }}
         d={edgePath}
         markerEnd={markerEnd}
@@ -250,11 +251,12 @@ interface Agent {
 interface AgentDetailsModalProps {
   agentId: string;
   agentType?: string;
+  projectId?: string;
   onClose: () => void;
 }
 
 // Agent 详情弹窗组件 - 显示加载的文档和正在干的工作
-function AgentDetailsModal({ agentId, agentType, onClose }: AgentDetailsModalProps) {
+function AgentDetailsModal({ agentId, agentType, projectId, onClose }: AgentDetailsModalProps) {
   const [details, setDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'soul' | 'role' | 'skill' | 'memory' | 'work' | 'logs'>('soul');
@@ -264,7 +266,7 @@ function AgentDetailsModal({ agentId, agentType, onClose }: AgentDetailsModalPro
   useEffect(() => {
     const fetchDetails = async () => {
       try {
-        const res = await infoApi.getAgentDetails(agentId);
+        const res = await infoApi.getAgentDetails(agentId, projectId);
         setDetails(res.data);
       } catch (error) {
         console.error('Failed to fetch agent details:', error);
@@ -274,7 +276,7 @@ function AgentDetailsModal({ agentId, agentType, onClose }: AgentDetailsModalPro
     };
 
     fetchDetails();
-  }, [agentId]);
+  }, [agentId, projectId]);
 
   // 获取 agent 相关日志
   useEffect(() => {
@@ -526,7 +528,7 @@ function AgentDetailsModal({ agentId, agentType, onClose }: AgentDetailsModalPro
 }
 
 // 初始节点
-const getInitialNodes = (agentTeam?: Agent[]): CustomNode[] => {
+const getInitialNodes = (agentTeam?: Agent[], project_id?: string): CustomNode[] => {
   const nodes: CustomNode[] = [
     {
       id: 'user',
@@ -586,6 +588,7 @@ const getInitialNodes = (agentTeam?: Agent[]): CustomNode[] => {
           agentId: agent.agent_id,
           icon: agentIcon,
           status: 'idle',
+          project_id: (agent as any).project_id || project_id,
         },
       };
     });
@@ -624,7 +627,8 @@ export function WorkflowCanvas() {
   const [subAgents, setSubAgents] = useState<Array<Record<string, unknown>>>([]);
   const [agentTeam, setAgentTeam] = useState<Agent[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState<{ agentId: string; agentType?: string } | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<{ agentId: string; agentType?: string; projectId?: string } | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
   // 获取工作流状态
   const fetchWorkflowStatus = useCallback(async () => {
@@ -735,19 +739,19 @@ export function WorkflowCanvas() {
   // 获取 Agent Team 列表
   const fetchAgentTeam = useCallback(async () => {
     try {
-      const res = await infoApi.getAgentTeam();
+      const res = await infoApi.getAgentTeam(selectedProjectId || undefined);
       const agents = res.data.agents || [];
       setAgentTeam(agents);
 
       // 初始化节点和边
-      const initialNodes = getInitialNodes(agents);
+      const initialNodes = getInitialNodes(agents, selectedProjectId || undefined);
       const initialEdges = getInitialEdges(agents);
       setNodes(initialNodes);
       setEdges(initialEdges);
     } catch (err) {
       console.error('Failed to fetch agent team:', err);
     }
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, selectedProjectId]);
 
   // 定时获取工作流状态 - 只获取一次，避免无限循环
   useEffect(() => {
@@ -760,21 +764,26 @@ export function WorkflowCanvas() {
   // 获取 Agent Team
   useEffect(() => {
     fetchAgentTeam();
-  }, [fetchAgentTeam]);
+  }, [fetchAgentTeam, selectedProjectId]);
+
+  // 处理项目切换
+  const handleProjectChange = useCallback((projectId: string | null) => {
+    setSelectedProjectId(projectId);
+  }, []);
 
   // 处理节点点击
   const onNodeClick = useCallback((_: React.MouseEvent, node: CustomNode) => {
     const agentId = node.data.agentId;
     const agentType = node.data.type as string;
+    const projectId = node.data.project_id as string | undefined;
     if (agentId) {
-      setSelectedAgent({ agentId, agentType });
+      setSelectedAgent({ agentId, agentType, projectId });
     }
   }, []);
 
   // Performance optimized ReactFlow config
   const flowOptions = useMemo(() => ({
     nodeOrigin: [0.5, 0] as [number, number],
-    elevateEdges: true,
     selectNodesOnDrag: false,
     snapToGrid: true,
     snapGrid: [15, 15] as [number, number],
@@ -783,7 +792,7 @@ export function WorkflowCanvas() {
     fitView: true,
     fitViewOptions: { padding: 0.2 },
     nodesConnectable: false,
-    nodesDraggable: false, // 禁用拖拽以提高性能
+    nodesDraggable: false,
     panOnDrag: true,
     zoomOnScroll: true,
     zoomOnPinch: true,
@@ -793,36 +802,45 @@ export function WorkflowCanvas() {
   }), [onNodeClick]);
 
   return (
-    <div className="w-full h-full bg-gray-50 relative">
+    <div className="w-full h-full bg-gray-50 relative overflow-hidden">
       {/* Header */}
-      <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200 p-4 shadow-lg min-w-[200px]">
-        <div className="flex items-center gap-2 mb-2">
-          {isActive ? (
-            <Pause className="w-4 h-4 text-green-500 animate-pulse" />
-          ) : (
-            <Play className="w-4 h-4 text-gray-400" />
-          )}
-          <h2 className="text-base font-semibold text-gray-900">Workflow Status</h2>
-        </div>
-        <div className="space-y-1.5 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-500">Status:</span>
-            <span className={`font-medium ${isActive ? 'text-green-600' : 'text-gray-400'}`}>
-              {isActive ? 'Running' : 'Idle'}
-            </span>
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+        {/* Project Switcher */}
+        <ProjectSwitcher
+          selectedProjectId={selectedProjectId || undefined}
+          onProjectChange={handleProjectChange}
+        />
+
+        {/* Workflow Status */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200 p-4 shadow-lg min-w-[200px]">
+          <div className="flex items-center gap-2 mb-2">
+            {isActive ? (
+              <Pause className="w-4 h-4 text-green-500 animate-pulse" />
+            ) : (
+              <Play className="w-4 h-4 text-gray-400" />
+            )}
+            <h2 className="text-base font-semibold text-gray-900">Workflow Status</h2>
           </div>
-          {isActive && (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">Phase:</span>
-                <span className="font-medium text-gray-700">{currentPhase}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500">Sub-agents:</span>
-                <span className="font-medium text-gray-700">{subAgents.length}</span>
-              </div>
-            </>
-          )}
+          <div className="space-y-1.5 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500">Status:</span>
+              <span className={`font-medium ${isActive ? 'text-green-600' : 'text-gray-400'}`}>
+                {isActive ? 'Running' : 'Idle'}
+              </span>
+            </div>
+            {isActive && (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Phase:</span>
+                  <span className="font-medium text-gray-700">{currentPhase}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Sub-agents:</span>
+                  <span className="font-medium text-gray-700">{subAgents.length}</span>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -877,26 +895,28 @@ export function WorkflowCanvas() {
       )}
 
       {/* ReactFlow Canvas */}
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypesMemo}
-        edgeTypes={edgeTypesMemo}
-        {...flowOptions}
-        className="bg-gray-50"
-      >
-        <Background
-          color="#e5e5e7"
-          gap={24}
-          size={1}
-        />
-        <Controls
-          className="bg-white border-gray-200 shadow-lg rounded-lg"
-          showInteractive={false}
-        />
-      </ReactFlow>
+      <div className="w-full h-full absolute inset-0">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypesMemo}
+          edgeTypes={edgeTypesMemo}
+          {...flowOptions}
+          className="w-full h-full bg-gray-50"
+        >
+          <Background
+            color="#e5e5e7"
+            gap={24}
+            size={1}
+          />
+          <Controls
+            className="bg-white border-gray-200 shadow-lg rounded-lg"
+            showInteractive={false}
+          />
+        </ReactFlow>
+      </div>
 
       {/* Refresh Button */}
       <button
@@ -912,6 +932,7 @@ export function WorkflowCanvas() {
         <AgentDetailsModal
           agentId={selectedAgent.agentId}
           agentType={selectedAgent.agentType}
+          projectId={(selectedAgent as any).projectId}
           onClose={() => setSelectedAgent(null)}
         />
       )}

@@ -1,0 +1,27 @@
+{
+  "id": "5ae6b3a6e5c15ba0",
+  "from_agent": "core_brain",
+  "to_agent": "coder",
+  "msg_type": "task",
+  "content": {
+    "from": "core_brain",
+    "to": "coder",
+    "expect_response": true,
+    "sent_at": "2026-03-06T15:11:09.854001",
+    "action": "delegate",
+    "task": {
+      "task_id": "S5",
+      "description": "Create Docker configuration"
+    },
+    "callback_msg_id": null
+  },
+  "status": "pending",
+  "created_at": "2026-03-06T15:11:09.854097",
+  "updated_at": "2026-03-06T15:11:09.854103",
+  "processed_at": null,
+  "error": null,
+  "priority": 5,
+  "ttl_seconds": 3600,
+  "retry_count": 0,
+  "max_retries": 3
+}

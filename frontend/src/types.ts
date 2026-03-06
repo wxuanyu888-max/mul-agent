@@ -1,0 +1,116 @@
+// API Types
+
+export interface ChatRequest {
+  message: string;
+  agent_id?: string;
+}
+
+export interface ChatResponse {
+  response: string;
+  route?: string;
+}
+
+export interface Agent {
+  agent_id: string;
+  name: string;
+  description: string;
+  role: string | Record<string, unknown>;
+  status?: string;
+  project_id?: string;
+}
+
+export interface AgentConfig {
+  metadata?: Record<string, unknown>;
+  content: string;
+}
+
+export interface Memory {
+  id: string;
+  content: string;
+  timestamp: number;
+  type: string;
+}
+
+export interface LogEntry {
+  message: string;
+  datetime?: string;
+  source?: string;
+  level?: string;
+  trace_id?: string;
+  run_id?: string;
+}
+
+export interface AgentSummary {
+  total_runs: number;
+  success: number;
+  failed: number;
+  error: number;
+  avg_duration: number;
+  route_stats: Record<string, number>;
+}
+
+export interface Route {
+  name: string;
+  description: string;
+}
+
+export interface Project {
+  project_id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  agent_count: number;
+}
+
+export interface ProjectDetails {
+  project_id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  agents: Agent[];
+}
+
+// Token Usage Types
+export interface TokenUsageSummary {
+  agent_id: string;
+  total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  access_count: number;
+  last_access_time: string | null;
+  updated_at: string | null;
+}
+
+export interface TokenUsageDetails {
+  summary: TokenUsageSummary;
+  details: {
+    by_model: Record<string, ModelTokenStats>;
+    by_function: Record<string, FunctionTokenStats>;
+    by_date: Record<string, DateTokenStats>;
+  };
+}
+
+export interface ModelTokenStats {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  access_count: number;
+}
+
+export interface FunctionTokenStats {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  access_count: number;
+}
+
+export interface DateTokenStats {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  access_count: number;
+}
+
+export interface AllAgentsTokenUsage {
+  [agent_id: string]: TokenUsageSummary;
+}

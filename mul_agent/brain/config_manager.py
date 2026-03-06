@@ -18,6 +18,7 @@ class ConfigManager:
     """配置管理器"""
 
     CONFIG_TYPES = ["soul", "user", "skill", "memory"]
+    PROMPT_CONFIG_TYPE = "prompt"
 
     def __init__(self, config_dir: Path):
         # config_dir 应该是 storage/ 目录
@@ -106,6 +107,69 @@ class ConfigManager:
             for config_type in self.CONFIG_TYPES
         }
 
+    def load_prompt(self, agent_id: str, prompt_name: str) -> Optional[str]:
+        """加载指定提示词（可选的风格提示词）
+
+        只从 prompt.md 加载用户自定义的风格提示词。
+        系统提示词（如 llm_decision, context_prompt）不应该从这里加载。
+
+        Args:
+            agent_id: Agent ID
+            prompt_name: 提示词名称（如 coder_style, writer_style 等）
+
+        Returns:
+            str: 提示词内容，如果没有找到则返回 None
+        """
+        # 先尝试从 prompt.md 加载
+        try:
+            content = self.load_text_content(agent_id, self.PROMPT_CONFIG_TYPE)
+            if content:
+                # 解析 Markdown 中的提示词块
+                import re
+                # 查找 ## 提示词名称 后的代码块
+                pattern = rf'## {prompt_name}\s*\n```\n(.*?)```'
+                match = re.search(pattern, content, re.DOTALL)
+                if match:
+                    return match.group(1).strip()
+        except Exception:
+            pass
+
+        # 系统提示词不应该有 fallback，返回 None
+        return None
+
+    def load_all_prompts(self, agent_id: str) -> Dict[str, Optional[str]]:
+        """加载所有可选提示词
+
+        Args:
+            agent_id: Agent ID
+
+        Returns:
+            Dict[str, Optional[str]]: 提示词名称到内容的映射
+        """
+        # 只加载可选的风格提示词
+        optional_prompts = [
+            "coder_style", "writer_style", "researcher_style",
+            "greeting_style", "response_style"
+        ]
+        return {
+            name: self.load_prompt(agent_id, name)
+            for name in optional_prompts
+        }
+
+    def save_prompt(self, agent_id: str, prompt_name: str, content: str) -> bool:
+        """保存提示词（暂未实现完整功能，仅支持读取）
+
+        Args:
+            agent_id: Agent ID
+            prompt_name: 提示词名称
+            content: 提示词内容
+
+        Returns:
+            bool: 是否成功保存
+        """
+        # TODO: 实现提示词保存功能
+        return False
+
     def _parse_md_config(self, content: str, config_type: str) -> Dict[str, Any]:
         """解析 Markdown 配置文件 - 提取 YAML front matter"""
         # 提取 YAML front matter
@@ -139,34 +203,58 @@ class ConfigManager:
         return config
 
     def _dict_to_md(self, data: Dict[str, Any], config_type: str) -> str:
-        """将字典转换为 Markdown 格式"""
+        """将字典转换为 Markdown 格式 - 完整 YAML front matter"""
         lines = ["---"]
-        # 添加 front matter
-        for key, value in data.items():
-            if isinstance(value, (str, int, float, bool)):
-                lines.append(f"{key}: {value}")
+
+        # 使用 YAML 序列化所有数据到 front matter（支持嵌套结构）
+        if HAS_YAML:
+            try:
+                import yaml
+                yaml_content = yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                lines.append(yaml_content.strip())
+            except Exception:
+                # Fallback: 简单序列化
+                for key, value in data.items():
+                    if isinstance(value, (str, int, float, bool)):
+                        lines.append(f"{key}: {value}")
+                    elif isinstance(value, dict):
+                        lines.append(f"{key}:")
+                        for k, v in value.items():
+                            if isinstance(v, (str, int, float, bool)):
+                                lines.append(f"  {k}: {v}")
+                            elif isinstance(v, list):
+                                lines.append(f"  {k}: {yaml.dump(v, default_flow_style=True).strip()}")
+                    elif isinstance(value, list):
+                        lines.append(f"{key}: {value}")
+        else:
+            # 无 YAML 库时的降级处理
+            for key, value in data.items():
+                if isinstance(value, (str, int, float, bool)):
+                    lines.append(f"{key}: {value}")
+                elif isinstance(value, dict):
+                    lines.append(f"{key}:")
+                    for k, v in value.items():
+                        lines.append(f"  {k}: {v}")
+                elif isinstance(value, list):
+                    lines.append(f"{key}: {value}")
+
         lines.append("---\n")
 
-        # 添加内容
+        # 添加简要的内容说明（不重复 front matter 中已有的数据）
         lines.append(f"# {config_type.title()} 配置\n")
-        for key, value in data.items():
-            if isinstance(value, dict):
-                lines.append(f"\n## {key.title()}")
-                for k, v in value.items():
-                    lines.append(f"- **{k}**: {v}")
-            elif isinstance(value, list):
-                lines.append(f"\n## {key.title()}")
-                for item in value:
-                    if isinstance(item, dict):
-                        lines.append(f"\n### {item.get('name', 'item')}")
-                        for k, v in item.items():
-                            lines.append(f"- **{k}**: {v}")
-                    else:
-                        lines.append(f"- {item}")
-            else:
-                lines.append(f"- **{key}**: {value}")
+        lines.append(f"这是一个 {config_type} 配置文件，包含 Agent 的{self._get_config_description(config_type)}。\n")
 
         return "\n".join(lines)
+
+    def _get_config_description(self, config_type: str) -> str:
+        """获取配置类型描述"""
+        descriptions = {
+            "soul": "核心特质、行为模式、进化规则和约束条件",
+            "user": "角色定义、能力、工具和权限配置",
+            "skill": "技能列表和技能树结构",
+            "memory": "记忆策略、交接配置和检索参数"
+        }
+        return descriptions.get(config_type, "配置信息")
 
     def load_all(self, agent_id: str) -> Dict[str, Any]:
         """加载所有配置"""

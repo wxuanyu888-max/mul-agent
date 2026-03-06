@@ -97,7 +97,7 @@ class ContextBuilder:
         agent_id: str,
         format: str = "markdown"
     ) -> str:
-        """构建系统提示词
+        """构建系统提示词 - 从配置文件加载
 
         根据配置文件生成系统提示词，用于 LLM 调用。
 
@@ -118,41 +118,57 @@ class ContextBuilder:
         role_title = user.get("role", {}).get("title", "Assistant")
         responsibilities = user.get("role", {}).get("responsibilities", [])
 
+        # 尝试从配置文件加载提示词模板
+        prompt_template = self.config_manager.load_prompt(agent_id, "context_prompt")
+
         if format == "markdown":
-            # Markdown 格式的系统提示
-            prompt_parts = [
-                f"# {role_title}",
-                "",
-                "## 角色定义",
-                f"- **类型**: {user.get('role', {}).get('type', 'worker')}",
-                f"- **职责**: {', '.join(responsibilities)}" if responsibilities else "",
-                "",
-                "## 核心特质",
-                f"- **人格**: {personality}",
-                f"- **价值观**: {', '.join(soul.get('core_traits', {}).get('values', []))}",
-                "",
-            ]
+            # 如果配置文件中没有提示词，使用默认 Markdown 格式
+            if not prompt_template or prompt_template.startswith("Current Task:"):
+                # Markdown 格式的系统提示
+                prompt_parts = [
+                    f"# {role_title}",
+                    "",
+                    "## 角色定义",
+                    f"- **类型**: {user.get('role', {}).get('type', 'worker')}",
+                    f"- **职责**: {', '.join(responsibilities)}" if responsibilities else "",
+                    "",
+                    "## 核心特质",
+                    f"- **人格**: {personality}",
+                    f"- **价值观**: {', '.join(soul.get('core_traits', {}).get('values', []))}",
+                    "",
+                ]
 
-            # 添加完整的文本描述（如果有的话）
-            if text_contents.get("soul"):
-                prompt_parts.extend([
-                    "## 完整描述",
-                    text_contents["soul"],
-                    ""
-                ])
+                # 添加完整的文本描述（如果有的话）
+                if text_contents.get("soul"):
+                    prompt_parts.extend([
+                        "## 完整描述",
+                        text_contents["soul"],
+                        ""
+                    ])
 
-            if text_contents.get("user"):
-                prompt_parts.extend([
-                    "## 用户配置详情",
-                    text_contents["user"],
-                    ""
-                ])
+                if text_contents.get("user"):
+                    prompt_parts.extend([
+                        "## 用户配置详情",
+                        text_contents["user"],
+                        ""
+                    ])
 
-            return "\n".join([p for p in prompt_parts if p])
+                return "\n".join([p for p in prompt_parts if p])
+            else:
+                # 使用配置文件中的模板
+                return prompt_template.format(
+                    user_input="",
+                    memory_context="",
+                    soul_personality=personality,
+                    role_title=role_title,
+                    user_text=text_contents.get("user", ""),
+                    soul_text=text_contents.get("soul", "")
+                )
 
         else:
-            # 纯文本格式
-            return f"{role_title}. Personality: {personality}. Responsibilities: {', '.join(responsibilities)}"
+            # 纯文本格式 - 从配置文件加载
+            default_text = f"{role_title}. Personality: {personality}. Responsibilities: {', '.join(responsibilities)}"
+            return prompt_template if prompt_template and not prompt_template.startswith("Current Task:") else default_text
 
     def _get_team_info(self) -> Dict[str, Any]:
         """获取团队信息"""
