@@ -53,7 +53,8 @@ class AgentDaemon:
         check_interval: int = 10       # 10秒检查一次
     ):
         self.config_manager = config_manager
-        self.router = Router(config_manager)
+        self.agent_id = "wangyue"
+        self.router = Router(config_manager, self.agent_id)
 
         # 状态配置
         self.idle_timeout = idle_timeout

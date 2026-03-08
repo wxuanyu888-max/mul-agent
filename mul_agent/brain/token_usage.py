@@ -16,13 +16,13 @@ class TokenUsageCenter:
     使用方式：
         center = TokenUsageCenter(config_manager)
         center.record_usage(
-            agent_id="core_brain",
+            agent_id="wang",
             model="claude-sonnet-4-20250514",
             function="think",
             input_tokens=100,
             output_tokens=50
         )
-        stats = center.get_usage("core_brain")
+        stats = center.get_usage("wang")
     """
 
     # 功能类型枚举
@@ -118,20 +118,35 @@ class TokenUsageCenter:
             usage["by_date"][date_key]["total_tokens"] += input_tokens + output_tokens
             usage["by_date"][date_key]["access_count"] += 1
 
-            # 添加详细记录（用于审计）
+            # 添加详细记录（用于审计和调试）
+            # 记录每次 LLM 调用的输入输出文本、上下文来源、工具调用
+            log_entry = {
+                "timestamp": now.isoformat(),
+                "model": model,
+                "function": function,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+
+            # 添加输入输出文本（如果提供）
             if extra:
-                log_entry = {
-                    "timestamp": now.isoformat(),
-                    "model": model,
-                    "function": function,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "extra": extra
-                }
-                usage["logs"].append(log_entry)
-                # 保留最近 100 条记录
-                if len(usage["logs"]) > 100:
-                    usage["logs"] = usage["logs"][-100:]
+                if "input" in extra:
+                    log_entry["input_text"] = extra["input"]
+                if "output" in extra:
+                    log_entry["output_text"] = extra["output"]
+                if "context_sources" in extra:
+                    log_entry["context_sources"] = extra["context_sources"]
+                if "tool_calls" in extra:
+                    log_entry["tool_calls"] = extra["tool_calls"]
+                # 保留其他 extra 字段（向后兼容）
+                for key, value in extra.items():
+                    if key not in ("input", "output", "context_sources", "tool_calls"):
+                        log_entry[key] = value
+
+            usage["llm_logs"].append(log_entry)
+            # 保留最近 200 条记录
+            if len(usage["llm_logs"]) > 200:
+                usage["llm_logs"] = usage["llm_logs"][-200:]
 
             # 保存到文件
             self._save_usage(agent_id, usage)
@@ -231,22 +246,35 @@ class TokenUsageCenter:
             "by_model": {},
             "by_function": {},
             "by_date": {},
-            "logs": []
+            "llm_logs": []  # LLM 调用日志（包含输入输出文本、上下文来源、工具调用）
         }
 
     def _load_usage(self, agent_id: str) -> Dict[str, Any]:
-        """加载使用统计"""
+        """加载使用统计
+
+        优先从 storage/token_usage/{agent_id}.json 加载
+        """
         # 检查缓存
         if agent_id in self._usage_cache:
             return self._usage_cache[agent_id]
 
-        # 从文件加载
+        # 优先从 storage/token_usage/{agent_id}.json 加载
         try:
-            content = self.config_manager.load_text_content(agent_id, "token_usage")
-            if content:
-                return self._parse_token_usage_md(content, agent_id)
-        except Exception:
-            pass
+            json_file_path = self.config_manager.token_usage_dir / f"{agent_id}.json"
+            if json_file_path.exists():
+                with open(json_file_path, "r", encoding="utf-8") as f:
+                    usage = json.load(f)
+                # 兼容旧数据：如果有 logs 字段，重命名为 llm_logs
+                if "logs" in usage and "llm_logs" not in usage:
+                    usage["llm_logs"] = usage["logs"]
+                    del usage["logs"]
+                # 确保 llm_logs 字段存在
+                if "llm_logs" not in usage:
+                    usage["llm_logs"] = []
+                self._usage_cache[agent_id] = usage
+                return usage
+        except Exception as e:
+            print(f"TokenUsageCenter._load_usage JSON load error: {e}")
 
         # 创建新的空白统计
         usage = self._create_empty_usage(agent_id)
@@ -254,18 +282,19 @@ class TokenUsageCenter:
         return usage
 
     def _save_usage(self, agent_id: str, usage: Dict[str, Any]) -> bool:
-        """保存使用统计到文件"""
+        """保存使用统计到 storage/token_usage/ 目录
+
+        只保存 JSON 文件（用于程序读取和存储完整数据）
+        Markdown 文件不再保存（因为 token_usage 已经移到 storage 目录）
+        """
         try:
-            # 转换为 Markdown 格式
-            md_content = self._to_token_usage_md(usage)
+            # 保存到 storage/token_usage/{agent_id}.json
+            token_usage_dir = self.config_manager.token_usage_dir
+            token_usage_dir.mkdir(parents=True, exist_ok=True)
 
-            # 保存到文件
-            agent_dir = self.config_manager.agents_dir / agent_id
-            agent_dir.mkdir(parents=True, exist_ok=True)
-
-            file_path = agent_dir / "token_usage.md"
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(md_content)
+            json_file_path = token_usage_dir / f"{agent_id}.json"
+            with open(json_file_path, "w", encoding="utf-8") as f:
+                json.dump(usage, f, indent=2, ensure_ascii=False)
 
             # 更新缓存
             self._usage_cache[agent_id] = usage
@@ -320,6 +349,7 @@ class TokenUsageCenter:
         by_model = usage.get("by_model", {})
         by_function = usage.get("by_function", {})
         by_date = usage.get("by_date", {})
+        logs = usage.get("llm_logs", [])
 
         lines = [
             "---",
@@ -393,5 +423,68 @@ class TokenUsageCenter:
                 f"{stats.get('output_tokens', 0)} | {stats.get('total_tokens', 0)} | "
                 f"{stats.get('access_count', 0)} |"
             )
+
+        # 添加 LLM 调用日志（详细记录每次远程调用）
+        if logs:
+            lines.extend([
+                "",
+                "## LLM 调用日志",
+                "",
+                "每次调用包含：输入文本、输出文本、上下文来源地址、工具调用情况",
+                "",
+            ])
+            for i, log in enumerate(logs):
+                lines.append(f"### 调用 #{i+1}")
+                lines.append("")
+                lines.append(f"- **时间**: {log.get('timestamp', '')}")
+                lines.append(f"- **模型**: {log.get('model', '')}")
+                lines.append(f"- **功能**: {log.get('function', '')}")
+                lines.append(f"- **Token**: 输入={log.get('input_tokens', 0)}, 输出={log.get('output_tokens', 0)}")
+
+                # 输入文本
+                input_text = log.get('input_text', '')
+                if input_text:
+                    lines.append("")
+                    lines.append("**输入文本**:")
+                    lines.append("```")
+                    # 只显示前 2000 字符，避免文件过大
+                    input_preview = input_text[:2000] + "..." if len(input_text) > 2000 else input_text
+                    lines.append(input_preview)
+                    lines.append("```")
+
+                # 输出文本
+                output_text = log.get('output_text', '')
+                if output_text:
+                    lines.append("")
+                    lines.append("**输出文本**:")
+                    lines.append("```")
+                    output_preview = output_text[:2000] + "..." if len(output_text) > 2000 else output_text
+                    lines.append(output_preview)
+                    lines.append("```")
+
+                # 上下文来源地址列表
+                context_sources = log.get('context_sources', [])
+                if context_sources:
+                    lines.append("")
+                    lines.append("**上下文来源地址**:")
+                    for src in context_sources:
+                        lines.append(f"- {src}")
+
+                # 工具调用情况
+                tool_calls = log.get('tool_calls', [])
+                if tool_calls:
+                    lines.append("")
+                    lines.append("**工具调用**:")
+                    for tool in tool_calls:
+                        if isinstance(tool, dict):
+                            tool_name = tool.get('name', 'unknown')
+                            tool_input = tool.get('input', '')
+                            lines.append(f"- **{tool_name}**: {tool_input[:200] if tool_input else 'N/A'}")
+                        else:
+                            lines.append(f"- {tool}")
+
+                lines.append("")
+                lines.append("---")
+                lines.append("")
 
         return "\n".join(lines)

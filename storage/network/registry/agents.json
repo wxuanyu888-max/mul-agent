@@ -3,79 +3,33 @@
     "core_brain": {
       "id": "core_brain",
       "status": "active",
-      "registered_at": "2026-03-06T16:08:43.324369",
-      "last_seen": "2026-03-06T16:09:58.097400",
+      "registered_at": "2026-03-07T23:22:45.174313",
+      "last_seen": "2026-03-07T23:22:45.174332",
       "metadata": {
-        "role": "",
-        "description": "核心大脑 v2.1 - 动态角色适配与技能进化系统",
+        "role": "Team Coordinator",
+        "description": "Wang - Core brain agent",
+        "capabilities": [
+          "planning",
+          "coordination"
+        ]
+      },
+      "capabilities": [
+        "planning",
+        "coordination"
+      ]
+    },
+    "wangyue": {
+      "id": "wangyue",
+      "status": "active",
+      "registered_at": "2026-03-07T22:37:14.580307",
+      "last_seen": "2026-03-07T22:37:14.580318",
+      "metadata": {
+        "role": "主 Agent",
+        "description": "",
         "capabilities": []
       },
       "capabilities": []
-    },
-    "test_agent": {
-      "id": "test_agent",
-      "status": "active",
-      "registered_at": "2026-03-06T14:40:03.589537",
-      "last_seen": "2026-03-06T14:40:03.590061",
-      "metadata": {
-        "capabilities": [
-          "coding",
-          "testing"
-        ]
-      },
-      "capabilities": [
-        "coding",
-        "testing"
-      ]
-    },
-    "coder": {
-      "id": "coder",
-      "status": "active",
-      "registered_at": "2026-03-06T14:47:08.885394",
-      "last_seen": "2026-03-06T14:47:08.885442",
-      "metadata": {
-        "capabilities": [
-          "coding",
-          "development"
-        ]
-      },
-      "capabilities": [
-        "coding",
-        "development"
-      ]
-    },
-    "reviewer": {
-      "id": "reviewer",
-      "status": "active",
-      "registered_at": "2026-03-06T14:47:08.886311",
-      "last_seen": "2026-03-06T14:47:08.886324",
-      "metadata": {
-        "capabilities": [
-          "security",
-          "review"
-        ]
-      },
-      "capabilities": [
-        "security",
-        "review"
-      ]
-    },
-    "writer": {
-      "id": "writer",
-      "status": "active",
-      "registered_at": "2026-03-06T14:47:08.887039",
-      "last_seen": "2026-03-06T14:47:08.887051",
-      "metadata": {
-        "capabilities": [
-          "writing",
-          "documentation"
-        ]
-      },
-      "capabilities": [
-        "writing",
-        "documentation"
-      ]
     }
   },
-  "updated_at": "2026-03-06T16:09:58.097593"
+  "updated_at": "2026-03-07T23:22:45.174528"
 }

@@ -1,0 +1,171 @@
+---
+version: "1.0"
+agent_id: ${agent_id}
+---
+
+# Agent Logic Configuration
+
+## 一、路由决策流程图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     用户输入                                 │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      ▼
+            ┌─────────────────────┐
+            │ 第 1 层：意图识别      │ ← 基于规则 (快速、可靠)
+            └─────────┬───────────┘
+                      │
+        ┌─────────────┼─────────────┐
+        │             │             │
+        ▼             ▼             ▼
+   ┌─────────┐  ┌─────────┐  ┌─────────┐
+   │明确命令  │  │协作意图  │  │无法识别  │
+   │bash 格式  │  │关键词匹配│  │→LLM 分析│
+   └────┬────┘  └────┬────┘  └────┬────┘
+        │            │            │
+        ▼            ▼            ▼
+   route:bash   route:create  route:uncertain
+                chat/memory        │
+                                   │ LLM 生成内容
+                                   ▼
+                              route:response
+```
+
+## 二、意图识别规则
+
+### 2.1 第 1 层：直接命令检测
+
+| 检测模式 | 路由 | 示例 |
+|---------|------|------|
+| `$ ` 或`$`开头 | bash | `$ ls -la` |
+| `bash/sh/sudo` 开头 | bash | `bash script.sh` |
+| 常见命令开头 (ls/cd/pwd 等) | bash | `ls -la`, `cat file.txt` |
+| 纯命令格式 (≤5 词) | bash | `find . -name "*.py"` |
+
+### 2.2 第 2 层：协作意图检测
+
+| 关键词 | 路由 | 披露条件 |
+|--------|------|---------|
+| create/new/add/创建 | create_user | Level 1+ |
+| team/group/团队 | create_team | Level 2+ |
+| memory/记住/记忆 | memory | Level 1+ |
+| chat/talk/对话 | chat | Level 2+ |
+
+### 2.3 第 3 层：专家命令
+
+| 关键词 | 路由 | 披露条件 |
+|--------|------|---------|
+| heart/reflect/自省 | heart | Level 3+ |
+| delegate/send/broadcast | network_* | Level 3+ |
+| token/usage | token_usage | Level 3+ |
+
+### 2.4 特殊场景
+
+| 场景 | 处理逻辑 |
+|------|---------|
+| 空输入 | 直接响应："我在听..." |
+| 问候语 (你好/hello) | route: uncertain → LLM 生成友好响应 |
+| 帮助请求 (help/?) | 加载 help_menu_style prompt |
+
+## 三、渐进式披露配置
+
+### 3.1 用户级别定义
+
+```yaml
+user_level:
+  - name: novice
+    description: 首次使用或偶尔使用
+    unlocked_routes: [response, bash, memory]
+
+  - name: advanced
+    description: 创建过 agent 或使用过协作功能
+    unlocked_routes: [response, bash, memory, create_user, chat, create_team]
+
+  - name: expert
+    description: 主动使用自省/网络功能
+    unlocked_routes: all
+```
+
+### 3.2 升级条件
+
+```yaml
+level_up_conditions:
+  novice → advanced:
+    - create_agent_count >= 1
+    - OR total_interactions >= 10
+    - OR explicit_request: true
+
+  advanced → expert:
+    - use_heart_explicitly: true
+    - OR use_network_feature: true
+    - OR conversation_complexity_score >= 0.7
+```
+
+## 四、工具权限配置
+
+### 4.1 Bash 权限分级
+
+```yaml
+bash_permission_levels:
+  novice:
+    allowed_patterns:
+      - "ls*" "cat*" "grep*" "find*" "head*" "tail*"
+      - "pwd" "echo*" "wc*" "mkdir*" "cp*" "mv*"
+    denied_patterns:
+      - "rm -rf*" "sudo*" "chmod*" "chown*"
+    require_confirmation:
+      - "rm*" "kill*" "curl*" "wget*"
+
+  advanced:
+    allowed_patterns: ["*"]
+    denied_patterns:
+      - "rm -rf /" "sudo rm*"
+    require_confirmation:
+      - "sudo*" "rm -rf*"
+
+  expert:
+    allowed_patterns: ["*"]
+    denied_patterns:
+      - "rm -rf /"
+    require_confirmation:
+      - "sudo rm -rf*"
+```
+
+### 4.2 MCP 工具配置
+
+```yaml
+mcp_tools:
+  chrome_devtools:
+    enabled: false  # 默认关闭，需要时开启
+    unlock_condition: user_level >= advanced
+
+  web_search:
+    enabled: true
+    unlock_condition: always
+
+  grep:
+    enabled: true
+    unlock_condition: always
+```
+
+## 五、行为规则
+
+### 5.1 响应原则
+
+1. **用户优先**: 始终以用户需求为中心
+2. **安全第一**: 不执行危险操作
+3. **透明执行**: 告知用户正在执行的操作
+4. **错误处理**: 清晰报告错误原因
+5. **渐进披露**: 根据用户水平展示合适的能力
+
+### 5.2 进化规则
+
+```yaml
+self_evolution:
+  can_modify_self: false
+  require_user_confirmation: true
+  snapshot_before_change: true
+  self_check_required: true
+```

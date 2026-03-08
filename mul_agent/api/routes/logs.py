@@ -1,14 +1,16 @@
 """Logs API routes"""
 
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 from fastapi import APIRouter
 
 router = APIRouter()
 
-# Log file path
-LOG_DIR = Path(__file__).parent.parent.parent.parent / "storage" / "logs"
+# Log file paths
+BASE_DIR = Path(__file__).parent.parent.parent.parent
+LOG_DIR = BASE_DIR / "storage" / "logs"
 
 
 def _parse_log_line(line: str) -> dict:
@@ -28,7 +30,8 @@ def _load_all_logs(limit: int = 1000) -> list:
 
     # Get all .jsonl and .log files, sorted by modification time (newest first)
     log_files = sorted(
-        [f for f in LOG_DIR.glob("*.jsonl") if f.is_file()],
+        [f for f in LOG_DIR.glob("*.jsonl") if f.is_file()] +
+        [f for f in LOG_DIR.glob("*.log") if f.is_file()],
         key=lambda x: x.stat().st_mtime,
         reverse=True
     )
@@ -43,7 +46,8 @@ def _load_all_logs(limit: int = 1000) -> list:
                             logs.append(log_entry)
                         if len(logs) >= limit:
                             return logs
-        except Exception:
+        except Exception as e:
+            logging.warning(f"Failed to read log file {log_file}: {e}")
             continue
 
     return logs

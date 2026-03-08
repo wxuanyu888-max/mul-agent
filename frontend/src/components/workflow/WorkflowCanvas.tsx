@@ -604,17 +604,8 @@ const getInitialEdges = (agentTeam?: Agent[]): CustomEdge[] => {
     { id: 'e-user-brain', source: 'user', target: 'core-brain', type: 'custom' },
   ];
 
-  // 如果有 agent team，添加从 brain 到每个 agent 的边
-  if (agentTeam && agentTeam.length > 0) {
-    const agentEdges: CustomEdge[] = agentTeam.map((agent) => ({
-      id: `e-brain-${agent.agent_id}`,
-      source: 'core-brain',
-      target: `agent-${agent.agent_id}`,
-      type: 'custom',
-      data: { type: 'team' },
-    }));
-    edges.push(...agentEdges);
-  }
+  // 注意：不在这里创建 brain 到 agent 的边，由 fetchInteractions 统一处理
+  // 这样可以根据是否有交互数据来显示不同样式的连线
 
   return edges;
 };
@@ -629,6 +620,7 @@ export function WorkflowCanvas() {
   const [error, setError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<{ agentId: string; agentType?: string; projectId?: string } | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [interactions, setInteractions] = useState<Array<{ run_id: string; source: string; target: string; type: string; task: string; status: string; timestamp: number }>>([]);
 
   // 获取工作流状态
   const fetchWorkflowStatus = useCallback(async () => {
@@ -743,20 +735,167 @@ export function WorkflowCanvas() {
       const agents = res.data.agents || [];
       setAgentTeam(agents);
 
-      // 初始化节点和边
+      // 初始化节点和边 - 重置所有状态
       const initialNodes = getInitialNodes(agents, selectedProjectId || undefined);
       const initialEdges = getInitialEdges(agents);
       setNodes(initialNodes);
       setEdges(initialEdges);
+
+      // 获取交互数据并创建交互边
+      const interactionsRes = await infoApi.getInteractions(50);
+      const interactionList = interactionsRes.data.interactions || [];
+      setInteractions(interactionList);
+
+      // 根据交互创建边 - 只连接到当前显示的 agent
+      setEdges((eds) => {
+        // 保留现有的基础边（user-brain 和 brain-agent）
+        const baseEdges = eds.filter((e) => !e.id.startsWith('e-interaction-'));
+
+        // 从交互数据创建新的边
+        const interactionEdges = interactionList
+          .filter((interaction) => {
+            // 只显示与当前项目 agent 相关的交互
+            if (!selectedProjectId) {
+              // all-project 模式，显示所有交互
+              return true;
+            }
+            // 特定项目模式，只显示与该项目的 agent 相关的交互
+            const isSourceRelated = interaction.source === 'wang' || interaction.source === 'core-brain' || agents.some(a => a.agent_id === interaction.source);
+            const isTargetRelated = interaction.target === 'wang' || interaction.target === 'core-brain' || agents.some(a => a.agent_id === interaction.target);
+            return isSourceRelated || isTargetRelated;
+          })
+          .map((interaction, index) => {
+            const sourceId = interaction.source === 'wang' || interaction.source === 'core-brain' ? 'core-brain' : `agent-${interaction.source}`;
+            const targetId = interaction.target === 'wang' || interaction.target === 'core-brain' ? 'core-brain' : `agent-${interaction.target}`;
+
+            // 检查目标 agent 是否在当前显示的列表中
+            const sourceExists = sourceId === 'core-brain' || sourceId === 'user' || agents.some(a => `agent-${a.agent_id}` === sourceId);
+            const targetExists = targetId === 'core-brain' || targetId === 'user' || agents.some(a => `agent-${a.agent_id}` === targetId);
+
+            if (!sourceExists || !targetExists) {
+              return null;
+            }
+
+            return {
+              id: `e-interaction-${index}-${interaction.run_id}`,
+              source: sourceId,
+              target: targetId,
+              type: 'custom' as const,
+              data: {
+                label: interaction.type,
+                type: interaction.type,
+                task: interaction.task,
+              },
+              style: {
+                stroke: interaction.status === 'executing' ? '#22c55e' : '#6b7280',
+                strokeWidth: 3,
+              },
+            };
+          }).filter(Boolean);
+
+        return [...baseEdges, ...interactionEdges] as CustomEdge[];
+      });
     } catch (err) {
       console.error('Failed to fetch agent team:', err);
     }
   }, [setNodes, setEdges, selectedProjectId]);
 
+  // 获取交互数据（定时刷新）
+  const fetchInteractions = useCallback(async () => {
+    try {
+      const res = await infoApi.getInteractions(50);
+      const interactionList = res.data.interactions || [];
+      setInteractions(interactionList);
+
+      // 根据交互创建边 - 只连接到当前显示的 agent
+      setEdges((eds) => {
+        // 保留现有的基础边（user-brain 和 brain-agent）
+        const baseEdges = eds.filter((e) => !e.id.startsWith('e-interaction-'));
+
+        // 如果没有交互数据，就从 agentTeam 创建默认的协作关系边
+        if (interactionList.length === 0 && agentTeam.length > 0) {
+          // 为每个 agent 创建一条连接到 core-brain 的虚线边，表示团队协作关系
+          const teamEdges: CustomEdge[] = agentTeam.map((agent) => ({
+            id: `e-team-collab-${agent.agent_id}`,
+            source: 'core-brain',
+            target: `agent-${agent.agent_id}`,
+            type: 'custom',
+            data: {
+              label: 'collaboration',
+              type: 'collaboration',
+              task: 'Team collaboration',
+            },
+            style: {
+              stroke: '#a855f7',
+              strokeWidth: 2,
+              strokeDasharray: '5,5',
+            },
+          }));
+
+          return [...baseEdges, ...teamEdges];
+        }
+
+        // 从交互数据创建新的边
+        const interactionEdges = interactionList
+          .filter((interaction) => {
+            // 只显示与当前项目 agent 相关的交互
+            if (!selectedProjectId) {
+              // all-project 模式，显示所有交互
+              return true;
+            }
+            // 特定项目模式，只显示与该项目的 agent 相关的交互
+            const isSourceRelated = interaction.source === 'wang' || interaction.source === 'core-brain' || agentTeam.some(a => a.agent_id === interaction.source);
+            const isTargetRelated = interaction.target === 'wang' || interaction.target === 'core-brain' || agentTeam.some(a => a.agent_id === interaction.target);
+            return isSourceRelated || isTargetRelated;
+          })
+          .map((interaction, index) => {
+            const sourceId = interaction.source === 'wang' || interaction.source === 'core-brain' ? 'core-brain' : `agent-${interaction.source}`;
+            const targetId = interaction.target === 'wang' || interaction.target === 'core-brain' ? 'core-brain' : `agent-${interaction.target}`;
+
+            // 检查目标 agent 是否在当前显示的列表中
+            const sourceExists = sourceId === 'core-brain' || sourceId === 'user' || agentTeam.some(a => `agent-${a.agent_id}` === sourceId);
+            const targetExists = targetId === 'core-brain' || targetId === 'user' || agentTeam.some(a => `agent-${a.agent_id}` === targetId);
+
+            if (!sourceExists || !targetExists) {
+              return null;
+            }
+
+            return {
+              id: `e-interaction-${index}-${interaction.run_id}`,
+              source: sourceId,
+              target: targetId,
+              type: 'custom' as const,
+              data: {
+                label: interaction.type,
+                type: interaction.type,
+                task: interaction.task,
+              },
+              style: {
+                stroke: interaction.status === 'executing' ? '#22c55e' : '#6b7280',
+                strokeWidth: 3,
+              },
+            };
+          }).filter(Boolean);
+
+        return [...baseEdges, ...interactionEdges] as CustomEdge[];
+      });
+    } catch (err) {
+      console.error('Failed to fetch interactions:', err);
+    }
+  }, [setEdges, selectedProjectId, agentTeam]);
+
   // 定时获取工作流状态 - 只获取一次，避免无限循环
   useEffect(() => {
     fetchWorkflowStatus();
     const interval = setInterval(fetchWorkflowStatus, 3000); // 每 3 秒刷新一次
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 获取交互数据
+  useEffect(() => {
+    fetchInteractions();
+    const interval = setInterval(fetchInteractions, 5000); // 每 5 秒刷新一次交互数据
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -876,6 +1015,15 @@ export function WorkflowCanvas() {
             <span className="w-3 h-3 rounded bg-pink-500" style={{ backgroundColor: nodeColors.user.border }} />
             <span className="text-gray-600">User</span>
           </div>
+          <div className="border-t border-gray-200 my-1.5" />
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-0.5 bg-green-500" />
+            <span className="text-gray-600">Active Interaction</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-0.5 bg-gray-400" />
+            <span className="text-gray-600">Past Interaction</span>
+          </div>
         </div>
       </div>
 
@@ -884,6 +1032,14 @@ export function WorkflowCanvas() {
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-purple-500" />
           <span className="text-sm font-medium text-gray-700">Agents: {agentTeam.length}</span>
+        </div>
+      </div>
+
+      {/* Interactions Count */}
+      <div className="absolute top-44 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200 p-3 shadow-lg">
+        <div className="flex items-center gap-2">
+          <Activity className="w-4 h-4 text-green-500" />
+          <span className="text-sm font-medium text-gray-700">Interactions: {interactions.length}</span>
         </div>
       </div>
 

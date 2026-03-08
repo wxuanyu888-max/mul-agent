@@ -257,7 +257,7 @@ class Memory:
 
         Args:
             query: 搜索关键词
-            filters: 过滤条件，如 {"date_from": "2024-01-01", "agent_id": "core_brain"}
+            filters: 过滤条件，如 {"date_from": "2024-01-01", "agent_id": "wang"}
 
         Returns:
             匹配的记忆列表

@@ -35,7 +35,7 @@ def cli(ctx):
 
 
 @cli.command()
-@click.option("--config", default="core_brain", help="Agent config name")
+@click.option("--config", default="wangyue", help="Agent config name")
 @click.option("--json", "use_json", is_flag=True, help="Output raw JSON")
 @click.option("--no-state-bar", is_flag=True, help="Disable state bar")
 @click.pass_context
@@ -238,17 +238,67 @@ def agent(ctx, agent_id):
 def team(ctx):
     """Show team status"""
     config_manager = ConfigManager(ctx.obj["config_dir"])
-    agents = config_manager.list_agents()
+
+    # 获取团队信息
+    teams = config_manager.list_teams()
+    all_agents = config_manager.list_agents()
 
     click.echo("=== Team Status ===\n")
-    if not agents:
+
+    if not all_agents:
         click.echo("No agents found")
         return
 
-    for agent_id in agents:
-        config = config_manager.load_all(agent_id)
-        role = config.get("user", {}).get("role", {}).get("title", "Unknown")
-        click.echo(f"  {agent_id}: {role}")
+    # 读取团队描述信息
+    teams_dir = config_manager.wang_dir / ".teams"
+    team_descriptions = {}
+    if teams_dir.exists():
+        import json
+        for team_file in teams_dir.glob("*.json"):
+            try:
+                with open(team_file, "r", encoding="utf-8") as f:
+                    team_data = json.load(f)
+                team_name = team_data.get("name", team_file.stem)
+                team_descriptions[team_name] = {
+                    "description": team_data.get("description", "无描述"),
+                    "created_by": team_data.get("created_by", "unknown"),
+                    "members": team_data.get("members", [])
+                }
+            except Exception:
+                pass
+
+    # 按团队显示
+    if teams:
+        click.echo(f"团队数量：{len(teams)}\n")
+        for team_name, members in sorted(teams.items()):
+            # 显示团队描述
+            team_desc = team_descriptions.get(team_name, {})
+            click.echo(f"【团队：{team_name}】")
+            if team_desc.get("description"):
+                click.echo(f"  用途：{team_desc['description']}")
+            if team_desc.get("created_by"):
+                click.echo(f"  创建者：{team_desc['created_by']}")
+            click.echo(f"  成员数量：{len(members)}")
+            for agent_id in members:
+                try:
+                    config = config_manager.load_all(agent_id)
+                    user_config = config.get("user", {})
+                    # 优先显示人名，如果没有人名则显示 agent_id
+                    person_name = user_config.get("person_name", agent_id)
+                    role = user_config.get("role", {}).get("title", "Unknown")
+                    team_info = user_config.get("team", {})
+                    role_in_team = team_info.get("role_in_team", "N/A")
+                    click.echo(f"    - {person_name} ({role})")
+                except Exception:
+                    click.echo(f"    - {agent_id}: (无法加载配置)")
+            click.echo("")
+    else:
+        # 回退到旧格式
+        click.echo(f"Agent 数量：{len(all_agents)}\n")
+        for agent_id in all_agents:
+            config = config_manager.load_all(agent_id)
+            role = config.get("user", {}).get("role", {}).get("title", "Unknown")
+            click.echo(f"  {agent_id}: {role}")
 
 
 @cli.command()
@@ -274,7 +324,7 @@ def route(ctx, route, params):
 @click.pass_context
 def repl(ctx):
     """Start REPL mode (alias for brain)"""
-    ctx.invoke(brain, config="core_brain")
+    ctx.invoke(brain, config="wangyue")
 
 
 # 全局守护进程实例
@@ -302,7 +352,7 @@ def _get_daemon(ctx) -> AgentDaemon:
 def daemon(ctx, idle_timeout, grow_interval, no_growth):
     """启动带守护进程的 Brain（实验性）"""
     config_manager = ConfigManager(ctx.obj["config_dir"])
-    brain_instance = Brain("core_brain", config_manager)
+    brain_instance = Brain("wangyue", config_manager)
 
     # 创建守护进程
     daemon_instance = AgentDaemon(

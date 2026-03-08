@@ -4,6 +4,7 @@ import { LogViewer } from './components/logs/LogViewer';
 import { ChatPanel } from './components/chat/ChatPanel';
 import { MemoryPanel } from './components/memory/MemoryPanel';
 import TokenUsagePanel from './components/token/TokenUsagePanel';
+import IntegrationList from './components/settings/IntegrationList';
 import {
   MessageSquare,
   Activity,
@@ -11,9 +12,10 @@ import {
   Database,
   Bot,
   BarChart3,
+  Key,
 } from 'lucide-react';
 
-type TabType = 'chat' | 'workflow' | 'logs' | 'memory' | 'token';
+type TabType = 'chat' | 'workflow' | 'logs' | 'memory' | 'token' | 'keys';
 
 interface NavItem {
   id: TabType;
@@ -27,6 +29,7 @@ const navItems: NavItem[] = [
   { id: 'logs', label: 'Logs', icon: FileText },
   { id: 'memory', label: 'Memory', icon: Database },
   { id: 'token', label: 'Token', icon: BarChart3 },
+  { id: 'keys', label: 'Settings', icon: Key },
 ];
 
 function App() {
@@ -44,6 +47,8 @@ function App() {
         return <MemoryPanel />;
       case 'token':
         return <TokenUsagePanel />;
+      case 'keys':
+        return <IntegrationList />;
       default:
         return <WorkflowCanvas />;
     }

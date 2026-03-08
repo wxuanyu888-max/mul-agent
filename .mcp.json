@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pencil": {
+      "command": "/Users/agent/.vscode/extensions/highagency.pencildev-0.6.30/out/mcp-server-darwin-x64",
+      "args": ["--app", "visual_studio_code"],
+      "description": "Pencil MCP for UI/UX design guidelines"
+    }
+  }
+}

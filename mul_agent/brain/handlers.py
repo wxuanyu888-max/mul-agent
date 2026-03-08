@@ -19,7 +19,62 @@ class ResponseHandler(BaseHandler):
 
     def handle(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """直接返回响应"""
+        import json as json_lib
+        import re
+
+        # 参数验证 - 如果 params 为空，返回空响应而不是错误
+        if not params:
+            return {
+                "message": "",
+                "type": "direct_response"
+            }
         message = params.get("message", "")
+
+        # 如果 message 是 JSON 字符串，尝试解析并提取实际的 message 内容
+        if message and isinstance(message, str) and message.strip().startswith("{"):
+            try:
+                parsed = json_lib.loads(message)
+                if isinstance(parsed, dict):
+                    # 处理嵌套的 route/response 结构
+                    if parsed.get("route") == "response":
+                        inner = parsed.get("message", "")
+                        if inner and isinstance(inner, str) and inner.strip().startswith("{"):
+                            # 继续解析嵌套的 JSON
+                            try:
+                                parsed2 = json_lib.loads(inner)
+                                if isinstance(parsed2, dict):
+                                    message = parsed2.get("message", inner)
+                                else:
+                                    message = inner
+                            except (json_lib.JSONDecodeError, TypeError):
+                                message = inner
+                        else:
+                            message = inner
+                    # 处理 data/message 结构
+                    elif parsed.get("data"):
+                        data = parsed.get("data", {})
+                        if isinstance(data, dict):
+                            message = data.get("message", message)
+                    # 处理 result/message 结构
+                    elif parsed.get("result"):
+                        result = parsed.get("result", {})
+                        if isinstance(result, dict):
+                            message = result.get("message", message)
+                    # 处理 status/message 结构
+                    elif parsed.get("status"):
+                        message = parsed.get("message", message)
+                    else:
+                        # 如果没有找到 message 字段，使用整个 JSON 的 message 字段
+                        message = parsed.get("message", message)
+            except (json_lib.JSONDecodeError, TypeError, ValueError):
+                # 解析失败，保留原始 message
+                pass
+
+        # 保留 Markdown 格式，只清理多余空白
+        if isinstance(message, str):
+            # 移除多余空白
+            message = message.strip()
+
         return {
             "message": message,
             "type": "direct_response"
@@ -82,7 +137,7 @@ class CreateUserHandler(BaseHandler):
             }
 
     def _generate_agent_configs(self, agent_id: str, config: Dict) -> Dict:
-        """Generate default configs for new agent"""
+        """Generate default configs for new agent - 简化版，无权限设计"""
         return {
             "soul": {
                 "version": "1.0",
@@ -103,10 +158,6 @@ class CreateUserHandler(BaseHandler):
                     "modification_scope": [],
                     "snapshot_before_change": True,
                     "self_check_required": True
-                },
-                "constraints": {
-                    "boundaries": ["no_harm"],
-                    "forbidden_actions": []
                 }
             },
             "user": {
@@ -123,19 +174,9 @@ class CreateUserHandler(BaseHandler):
                     "can_modify_config": False,
                     "can_execute_tools": True
                 },
-                "tools": {
-                    "enabled": ["bash"],
-                    "bash": {
-                        "enabled": True,
-                        "timeout": 30,
-                        "allowed_commands": ["ls", "pwd", "echo", "cat", "grep", "find", "head", "tail", "wc"],
-                        "forbidden_commands": ["rm -rf", "sudo", "dd"]
-                    }
-                },
-                "permissions": {
-                    "file_read": ["*"],
-                    "file_write": ["storage/memory/**"],
-                    "network_access": True
+                "llm": {
+                    "enabled": True,
+                    "max_tokens": 2048
                 }
             },
             "skill": {
@@ -193,20 +234,6 @@ class BashHandler(BaseHandler):
             }
 
         executor = BashExecutor(timeout=timeout, cwd=cwd)
-
-        # Get allowed commands from config
-        agent_config = self.config_manager.load("core_brain", "user")
-        allowed = agent_config.get("tools", {}).get("bash", {}).get("allowed_commands", ["*"])
-        forbidden = agent_config.get("tools", {}).get("bash", {}).get("forbidden_commands", [])
-
-        # Check if command is allowed
-        if not executor.is_safe(command, allowed, forbidden):
-            return {
-                "status": "error",
-                "error_code": 1003,
-                "message": f"Command not allowed: {command}"
-            }
-
         result = executor.execute(command)
 
         return {
@@ -225,10 +252,13 @@ class HeartHandler(BaseHandler):
         trigger = params.get("trigger", "manual")
         focus = params.get("focus", "all")
 
+        # 使用传入的 agent_id 或默认的 wangyue
+        agent_id = self.get_agent_id(params)
+
         # Load configurations
-        soul = self.config_manager.load("core_brain", "soul")
-        user = self.config_manager.load("core_brain", "user")
-        skill = self.config_manager.load("core_brain", "skill")
+        soul = self.config_manager.load(agent_id, "soul")
+        user = self.config_manager.load(agent_id, "user")
+        skill = self.config_manager.load(agent_id, "skill")
 
         # Get LLM to analyze
         from mul_agent.brain.llm import LLMClient
@@ -284,7 +314,7 @@ class HeartHandler(BaseHandler):
                             for k in keys[:-1]:
                                 current = current.get(k, {})
                             current[keys[-1]] = new_value
-                            self.config_manager.save("core_brain", "soul", soul)
+                            self.config_manager.save(agent_id, "soul", soul)
                             evolutions_applied.append(f"更新soul.{field} = {new_value}")
 
                         elif suggestion_type == "user" and field:
@@ -294,7 +324,7 @@ class HeartHandler(BaseHandler):
                             for k in keys[:-1]:
                                 current = current.get(k, {})
                             current[keys[-1]] = new_value
-                            self.config_manager.save("core_brain", "user", user)
+                            self.config_manager.save(agent_id, "user", user)
                             evolutions_applied.append(f"更新user.{field} = {new_value}")
 
                 except Exception as e:

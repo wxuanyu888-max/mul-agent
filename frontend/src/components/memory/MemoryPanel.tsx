@@ -15,8 +15,12 @@ import { memoryApi } from '../../services/api';
 interface Memory {
   id: string;
   content: string;
-  timestamp: number;
+  timestamp: string | number;
   type: string;
+  agent_id?: string;
+  from_agent?: string;
+  to_agent?: string;
+  status?: string;
 }
 
 type MemoryType = 'short' | 'long' | 'handover';
@@ -38,6 +42,10 @@ export function MemoryPanel() {
         memoryApi.getLongTerm(agentId, 50),
         memoryApi.getHandover(agentId),
       ]);
+
+      console.log('[MemoryPanel] Short-term response:', shortRes.data);
+      console.log('[MemoryPanel] Long-term response:', longRes.data);
+      console.log('[MemoryPanel] Handover response:', handoverRes.data);
 
       setShortTermMemories(shortRes.data.memories || []);
       setLongTermMemories(longRes.data.memories || []);
@@ -253,7 +261,9 @@ export function MemoryPanel() {
                         <div className="flex items-center gap-1 text-gray-400">
                           <Clock className="w-3 h-3" />
                           <span className="text-xs">
-                            {new Date(memory.timestamp).toLocaleString()}
+                            {typeof memory.timestamp === 'number'
+                              ? new Date(memory.timestamp).toLocaleString()
+                              : new Date(memory.timestamp).toLocaleString()}
                           </span>
                         </div>
                       )}

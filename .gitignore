@@ -72,3 +72,16 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/src/components/logs/
+frontend/*.tsbuildinfo
+frontend/*.js
+frontend/*.d.ts
+!frontend/postcss.config.js
+!frontend/tailwind.config.js
+
+# Storage runtime data
+storage/network/queue/
+storage/message_queue/
+storage/agents/agent_*/
+
+# Temporary test directories
+tests/agent_collaboration_test/

@@ -1,15 +1,26 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-// https://vite.dev/config/
 export default defineConfig({
     plugins: [react()],
     server: {
-        port: 5180,
+        port: 5182,
         host: true,
         proxy: {
             '/api': {
-                target: 'http://localhost:8080',
+                target: 'http://localhost:8000',
                 changeOrigin: true,
+                configure: function (proxy, options) {
+                    proxy.on('proxyReq', function (proxyReq, req, res) {
+                        console.log('[PROXY] Request:', req.method, req.url);
+                        console.log('[PROXY] Target:', options.target);
+                    });
+                    proxy.on('proxyRes', function (proxyRes, req, res) {
+                        console.log('[PROXY] Response:', proxyRes.statusCode);
+                    });
+                    proxy.on('error', function (err, req, res) {
+                        console.log('[PROXY] Error:', err);
+                    });
+                }
             }
         }
     }

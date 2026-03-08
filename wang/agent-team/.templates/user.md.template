@@ -1,0 +1,11 @@
+---
+discription:本文件是创建人物时的最小单元，在完善一个user.md时，请包含一下几部分
+---
+---
+name：
+position：
+job：
+load_list[](这个是用来加载一下硬技能，skill，mcp等等，会强制加载的)
+tool_list[bash(*)]
+route
+---

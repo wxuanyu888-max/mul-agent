@@ -13,6 +13,7 @@ import type {
   TokenUsageSummary,
   TokenUsageDetails,
   AllAgentsTokenUsage,
+  Integration,
 } from '../types';
 
 // Use relative path to work with Vite proxy in development
@@ -30,11 +31,29 @@ export const chatApi = {
   sendMessage: (request: ChatRequest) =>
     api.post<ChatResponse>('/chat', request),
 
-  getHistory: (limit: number = 20) =>
-    api.get<{ history: Array<{ role: string; content: string }>; total: number }>('/chat/history', { params: { limit } }),
+  getHistory: (limit: number = 20, agentId?: string, sessionId?: string) =>
+    api.get<{ history: Array<{ role: string; content: string }>; total: number; sessions?: Array<{ session_id: string; preview: string; last_message_at: string }> }>(
+      '/chat/history',
+      { params: { limit, agent_id: agentId, session_id: sessionId } }
+    ),
 
-  getSessions: () =>
-    api.get<{ sessions: Array<{ session_id: string; path: string }> }>('/chat/sessions'),
+  getSessions: (agentId?: string) =>
+    api.get<{ sessions: Array<{ session_id: string; agent_id: string; created_at: string; last_message_at: string; message_count: number; preview: string }> }>(
+      '/chat/sessions',
+      { params: { agent_id: agentId } }
+    ),
+
+  getSessionMessages: (sessionId: string, agentId?: string, limit: number = 100) =>
+    api.get<{ session_id: string; messages: Array<{ role: string; content: string; timestamp?: string }>; total: number }>(
+      `/chat/session/${sessionId}`,
+      { params: { agent_id: agentId, limit } }
+    ),
+
+  deleteSession: (sessionId: string, agentId?: string) =>
+    api.delete<{ status: string; message: string }>(
+      `/chat/session/${sessionId}`,
+      { params: { agent_id: agentId } }
+    ),
 };
 
 // Agents API
@@ -58,24 +77,24 @@ export const agentsApi = {
 // Memory API
 export const memoryApi = {
   getShortTerm: (agentId: string = 'core_brain', limit: number = 20) =>
-    api.get<{ memories: Memory[]; total: number }>('/memory/short-term', { params: { agentId, limit } }),
+    api.get<{ memories: Memory[]; total: number }>('/memory/short-term', { params: { agent_id: agentId, limit } }),
 
   getLongTerm: (agentId: string = 'core_brain', limit: number = 20) =>
-    api.get<{ memories: Memory[]; total: number }>('/memory/long-term', { params: { agentId, limit } }),
+    api.get<{ memories: Memory[]; total: number }>('/memory/long-term', { params: { agent_id: agentId, limit } }),
 
   getHandover: (agentId: string = 'core_brain') =>
-    api.get<{ memories: Memory[] }>('/memory/handover', { params: { agentId } }),
+    api.get<{ memories: Memory[] }>('/memory/handover', { params: { agent_id: agentId } }),
 
   write: (content: string, agentId: string = 'core_brain', memoryType: string = 'short_term', metadata?: Record<string, unknown>) =>
     api.post<{ status: string; memory_id: string; path: string }>('/memory/write', {
       content,
-      agentId,
-      memoryType,
+      agent_id: agentId,
+      memory_type: memoryType,
       metadata,
     }),
 
   delete: (memoryId: string, agentId: string = 'core_brain', memoryType: string = 'short_term') =>
-    api.delete(`/memory/${memoryId}`, { params: { agentId, memoryType } }),
+    api.delete(`/memory/${memoryId}`, { params: { agent_id: agentId, memory_type: memoryType } }),
 };
 
 // Logs API
@@ -158,6 +177,30 @@ export const tokenUsageApi = {
 
   reset: (agentId: string) =>
     api.post<{ status: string; message: string }>(`/token-usage/${agentId}/reset`),
+};
+
+// Integration Settings API
+export const integrationsApi = {
+  list: () =>
+    api.get<{ integrations: Integration[] }>('/integrations'),
+
+  get: (integrationId: string) =>
+    api.get<Integration>(`/integrations/${integrationId}`),
+
+  create: (data: { name: string; url: string; provider: string; model?: string; key?: string; icon?: string }) =>
+    api.post<{ status: string; integration: Integration }>('/integrations', data),
+
+  update: (integrationId: string, data: { name?: string; url?: string; provider?: string; model?: string; key?: string; icon?: string; status?: 'active' | 'inactive' }) =>
+    api.put<{ status: string; integration: Integration }>(`/integrations/${integrationId}`, data),
+
+  delete: (integrationId: string) =>
+    api.delete<{ status: string; message: string }>(`/integrations/${integrationId}`),
+
+  duplicate: (integrationId: string) =>
+    api.post<{ status: string; integration: Integration }>(`/integrations/${integrationId}/duplicate`),
+
+  reorder: (integrations: { id: string; order: number }[]) =>
+    api.put<{ status: string; message: string }>('/integrations/reorder', { integrations }),
 };
 
 export default api;

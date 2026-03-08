@@ -3,11 +3,13 @@
 export interface ChatRequest {
   message: string;
   agent_id?: string;
+  conversation_id?: string;
 }
 
 export interface ChatResponse {
   response: string;
   route?: string;
+  conversation_id?: string;
 }
 
 export interface Agent {
@@ -81,15 +83,6 @@ export interface TokenUsageSummary {
   updated_at: string | null;
 }
 
-export interface TokenUsageDetails {
-  summary: TokenUsageSummary;
-  details: {
-    by_model: Record<string, ModelTokenStats>;
-    by_function: Record<string, FunctionTokenStats>;
-    by_date: Record<string, DateTokenStats>;
-  };
-}
-
 export interface ModelTokenStats {
   input_tokens: number;
   output_tokens: number;
@@ -111,6 +104,62 @@ export interface DateTokenStats {
   access_count: number;
 }
 
+export interface ToolCall {
+  name: string;
+  input: string;
+}
+
+export interface LLMCallLog {
+  timestamp: string;
+  model: string;
+  function: string;
+  input_tokens: number;
+  output_tokens: number;
+  input_text?: string;      // 输入文本（完整）
+  output_text?: string;     // 输出文本（完整）
+  context_sources?: string[];  // 上下文来源地址列表（加载文件列表）
+  tool_calls?: ToolCall[];  // 工具调用列表
+  // 兼容旧格式
+  extra?: {
+    input?: string;
+    output?: string;
+    [key: string]: any;
+  };
+}
+
+export interface TokenUsageDetails {
+  summary: TokenUsageSummary;
+  details: {
+    by_model: Record<string, ModelTokenStats>;
+    by_function: Record<string, FunctionTokenStats>;
+    by_date: Record<string, DateTokenStats>;
+  };
+  llm_logs: LLMCallLog[];  // LLM 调用日志（在根级别）
+}
+
 export interface AllAgentsTokenUsage {
   [agent_id: string]: TokenUsageSummary;
+}
+
+// Integration Settings Types
+export interface Integration {
+  id: string;
+  name: string;
+  url: string;
+  provider: string;
+  model?: string;
+  icon?: string;
+  status: 'active' | 'inactive';
+  has_key: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface IntegrationFormData {
+  name: string;
+  url: string;
+  provider: string;
+  model?: string;
+  key?: string;
+  icon?: string;
 }
