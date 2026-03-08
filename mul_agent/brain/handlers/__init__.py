@@ -9,6 +9,7 @@ from .response import ResponseHandler
 from .create_user import CreateUserHandler
 from .create_team import CreateTeamHandler
 from .token_usage import TokenUsageHandler
+from .file_edit import FileEditHandler
 from .network import (
     NetworkDelegateHandler,
     NetworkSendHandler,
@@ -20,6 +21,7 @@ from .network import (
 __all__ = [
     "BaseHandler", "BashHandler", "ChatHandler", "HeartHandler", "MemoryHandler",
     "ResponseHandler", "CreateUserHandler", "CreateTeamHandler", "TokenUsageHandler",
+    "FileEditHandler",
     "NetworkDelegateHandler", "NetworkSendHandler", "NetworkCheckHandler",
     "NetworkBroadcastHandler", "NetworkHandoverHandler",
 ]

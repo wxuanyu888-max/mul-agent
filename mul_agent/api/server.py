@@ -68,19 +68,27 @@ app.add_middleware(
 )
 
 # Include routers
-from mul_agent.api.routes import info, agents, logs, chat, memory, projects, token_usage, integrations
+# Note: Use 'import module' instead of 'from module import x' to avoid namespace issues
+import mul_agent.api.routes.info as info_routes
+import mul_agent.api.routes.agents as agents_routes
+import mul_agent.api.routes.logs as logs_routes
+import mul_agent.api.routes.chat as chat_routes
+import mul_agent.api.routes.memory as memory_routes
+import mul_agent.api.routes.projects as projects_routes
+import mul_agent.api.routes.token_usage as token_usage_routes
+import mul_agent.api.routes.integrations as integrations_routes
 
-app.include_router(info.router, prefix="/api/v1", tags=["info"])
-app.include_router(agents.router, prefix="/api/v1", tags=["agents"])
-app.include_router(logs.router, prefix="/api/v1", tags=["logs"])
-app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
-app.include_router(memory.router, prefix="/api/v1", tags=["memory"])
-app.include_router(projects.router, prefix="/api/v1", tags=["projects"])
-app.include_router(token_usage.router, prefix="/api/v1", tags=["token_usage"])
-app.include_router(integrations.router, prefix="/api/v1", tags=["integrations"])
+app.include_router(info_routes.router, prefix="/api/v1", tags=["info"])
+app.include_router(agents_routes.router, prefix="/api/v1", tags=["agents"])
+app.include_router(logs_routes.router, prefix="/api/v1", tags=["logs"])
+app.include_router(chat_routes.router, prefix="/api/v1", tags=["chat"])
+app.include_router(memory_routes.router, prefix="/api/v1", tags=["memory"])
+app.include_router(projects_routes.router, prefix="/api/v1", tags=["projects"])
+app.include_router(token_usage_routes.router, prefix="/api/v1", tags=["token_usage"])
+app.include_router(integrations_routes.router, prefix="/api/v1", tags=["integrations"])
 
 # Also include agents router without v1 for frontend compatibility
-app.include_router(agents.router, prefix="/api", tags=["agents-v2"])
+app.include_router(agents_routes.router, prefix="/api", tags=["agents-v2"])
 
 
 @app.get("/api/v1/health")

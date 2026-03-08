@@ -11,6 +11,7 @@ from mul_agent.brain.handlers import (
     ResponseHandler,
     TokenUsageHandler,
     CreateTeamHandler,
+    FileEditHandler,
     NetworkDelegateHandler,
     NetworkSendHandler,
     NetworkCheckHandler,
@@ -28,6 +29,9 @@ from mul_agent.common.response import create_success_response
 from mul_agent.skills.manager import SkillManager
 from mul_agent.commands.manager import CommandManager
 
+# 导入 memory 用于创建交接文档
+from datetime import datetime
+
 
 class Router:
     """路由分发器"""
@@ -41,6 +45,7 @@ class Router:
         "response": ResponseHandler,
         "token_usage": TokenUsageHandler,
         "create_team": CreateTeamHandler,
+        "file_edit": FileEditHandler,
         # Agent 网络相关路由
         "network_delegate": NetworkDelegateHandler,
         "network_send": NetworkSendHandler,
@@ -61,6 +66,10 @@ class Router:
         self.skill_manager = SkillManager(config_manager, agent_id)
         self.command_manager = CommandManager(config_manager, agent_id)
 
+        # 初始化 Memory（用于创建交接文档）
+        from mul_agent.memory.memory import Memory
+        self.memory_manager = Memory(config_manager, agent_id)
+
     def dispatch(self, route: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """根据路由名分发到对应处理器"""
         # 特殊路由：batch - 批量执行多个命令
@@ -75,23 +84,89 @@ class Router:
                     message="commands list is required for batch route",
                     route=route
                 )
+
+            # 分离不同类型的命令
+            serial_cmds = []
+            parallel_cmds = []
+            async_cmds = []
+
+            for cmd in commands:
+                if cmd.get('async'):
+                    async_cmds.append(cmd)
+                elif cmd.get('parallel'):
+                    parallel_cmds.append(cmd)
+                else:
+                    serial_cmds.append(cmd)
+
+            # 创建交接文档（如果有 chat 或其他委派任务）
+            for cmd in commands:
+                if cmd.get('route') in ['chat', 'network_delegate']:
+                    self._create_handover_for_task(cmd, params.get('user_input', ''))
+
             try:
                 results = []
-                for cmd in commands:
+
+                # 1. 执行串行命令
+                for cmd in serial_cmds:
                     cmd_route = cmd.get("route")
                     cmd_params = cmd.get("params", {})
-                    # 递归调用 dispatch 执行每个命令
                     result = self.dispatch(cmd_route, cmd_params)
                     results.append({
                         "route": cmd_route,
-                        "result": result
+                        "result": result,
+                        "type": "serial"
                     })
+
+                # 2. 并行执行命令
+                if parallel_cmds:
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future_to_cmd = {
+                            executor.submit(self.dispatch, cmd.get("route"), cmd.get("params", {})): cmd
+                            for cmd in parallel_cmds
+                        }
+                        for future in concurrent.futures.as_completed(future_to_cmd):
+                            cmd = future_to_cmd[future]
+                            try:
+                                result = future.result()
+                                results.append({
+                                    "route": cmd.get("route"),
+                                    "result": result,
+                                    "type": "parallel"
+                                })
+                            except Exception as e:
+                                results.append({
+                                    "route": cmd.get("route"),
+                                    "result": {"status": "error", "message": str(e)},
+                                    "type": "parallel"
+                                })
+
+                # 3. 异步命令（后台执行，不等待）
+                if async_cmds:
+                    import threading
+                    for cmd in async_cmds:
+                        def run_async(cmd=cmd):
+                            try:
+                                self.dispatch(cmd.get("route"), cmd.get("params", {}))
+                            except Exception as e:
+                                print(f"Async command error: {e}")
+                        thread = threading.Thread(target=run_async)
+                        thread.start()
+                        results.append({
+                            "route": cmd.get("route"),
+                            "result": {"status": "async", "message": "后台执行中"},
+                            "type": "async"
+                        })
+
                 # 汇总所有结果
                 return create_success_response(
                     data={
                         "batch_results": results,
                         "total_commands": len(commands),
-                        "successful": len([r for r in results if r["result"].get("status") == "success"])
+                        "successful": len([r for r in results if r["result"].get("status") == "success"]),
+                        "serial_count": len(serial_cmds),
+                        "parallel_count": len(parallel_cmds),
+                        "async_count": len(async_cmds)
                     },
                     route=route
                 )
@@ -220,3 +295,42 @@ class Router:
             }
             for name, handler in self.handlers.items()
         ]
+
+    def _create_handover_for_task(self, cmd: Dict, user_input: str):
+        """为委派任务创建交接文档
+
+        命名规范：事情 - 人物-i 序号
+        文档首页包含：description、有效期限、作用范围
+        """
+        from_agent = self.agent_id or 'core_brain'
+        to_agent = cmd.get('params', {}).get('agent_id', 'unknown')
+        task_type = cmd.get('route', 'task')
+
+        # 生成任务序号
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        task_num = f"i{timestamp[-6:]}"
+
+        # 任务名称：事情 - 人物-i 序号
+        if task_type == 'chat':
+            task_name = f"对话协作-{to_agent}-{task_num}"
+        elif task_type == 'network_delegate':
+            task_name = f"任务委派-{to_agent}-{task_num}"
+        else:
+            task_name = f"{task_type}-{to_agent}-{task_num}"
+
+        # 构建交接内容
+        content = {
+            "task_name": task_name,
+            "description": f"来自 {from_agent} 的协作请求：{user_input[:200]}",
+            "deadline": "24 小时内",
+            "scope": f"涉及 Agent: {to_agent}",
+            "priority": "MEDIUM",
+            "task_content": cmd.get('params', {}).get('message', '无具体内容')
+        }
+
+        # 调用 memory 创建交接文档
+        try:
+            self.memory_manager.create_handover(from_agent, to_agent, content)
+        except Exception:
+            # 如果 memory 不可用，不中断主流程
+            pass

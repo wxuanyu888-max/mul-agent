@@ -20,15 +20,17 @@ class ContextBuilder:
         context = builder.build_context(agent_id, user_input)
     """
 
-    def __init__(self, config_manager, memory=None):
+    def __init__(self, config_manager, memory=None, memory_decision=None):
         """初始化上下文构建器
 
         Args:
             config_manager: ConfigManager 实例
             memory: Memory 实例（可选）
+            memory_decision: MemoryDecisionSystem 实例（可选，用于智能记忆检索）
         """
         self.config_manager = config_manager
         self.memory = memory
+        self.memory_decision = memory_decision
 
     def build_context(
         self,
@@ -47,6 +49,7 @@ class ContextBuilder:
                 - memory_limit: int, 记忆数量限制 (default: 5)
                 - include_team: bool, 是否包含团队信息 (default: False)
                 - include_history: bool, 是否包含对话历史 (default: False)
+                - smart_memory: bool, 是否使用智能记忆检索 (default: False)
 
         Returns:
             Dict: 完整的上下文字典
@@ -57,6 +60,7 @@ class ContextBuilder:
         memory_limit = options.get("memory_limit", 5)
         include_team = options.get("include_team", False)
         include_history = options.get("include_history", False)
+        smart_memory = options.get("smart_memory", True)  # 默认启用智能检索
 
         # 1. 加载结构化配置
         configs = self.config_manager.load_all(agent_id)
@@ -66,10 +70,18 @@ class ContextBuilder:
         if include_text:
             text_contents = self.config_manager.load_all_text_contents(agent_id)
 
-        # 3. 获取记忆（如果需要）
+        # 3. 获取记忆（如果需要）- 使用智能检索
         recent_memories = []
         if include_memory and self.memory:
-            recent_memories = self.memory.get_recent(limit=memory_limit)
+            if smart_memory and self.memory_decision:
+                # 使用语义搜索检索相关记忆
+                recent_memories = self.memory_decision.retrieve_relevant_memories(
+                    query=user_input,
+                    max_results=memory_limit
+                )
+            else:
+                # Fallback: 获取最近的记忆
+                recent_memories = self.memory.get_recent(limit=memory_limit)
 
         # 4. 获取团队信息（如果需要）
         team_info = {}

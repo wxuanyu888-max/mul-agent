@@ -22,7 +22,7 @@ class CreateUserHandler(BaseHandler):
         try:
             for config_type, data in self._generate_agent_configs(agent_id, config).items():
                 self.config_manager.save(agent_id, config_type, data)
-            return {"agent_id": agent_id, "name": name, "role_type": role_type, "status": "created", "message": f"Agent {agent_id} created!"}
+            return {"agent_id": agent_id, "name": name, "role_type": role_type, "status": "success", "message": f"Agent {agent_id} created!"}
         except Exception as e:
             return {"status": "error", "error_code": 1005, "message": f"Failed: {str(e)}"}
 

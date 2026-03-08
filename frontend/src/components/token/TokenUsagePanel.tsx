@@ -31,16 +31,17 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
   const [loading, setLoading] = useState(false);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expandedLogIds, setExpandedLogIds] = useState<Set<number>>(new Set());
+  const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // 分页状态 - 表 1（Agent 统计）
   const [table1Page, setTable1Page] = useState(1);
   const TABLE1_PAGE_SIZE = 10;
 
-  // 分页状态 - 表 2（LLM 调用明细）
+  // 分页状态 - 表 2（LLM 调用明细）- 每页显示 10 条
   const [table2Page, setTable2Page] = useState(1);
   const TABLE2_PAGE_SIZE = 10;
+  // 不判断是否超过页数，始终显示分页控件
 
   // 加载所有 Agent 的 Token 使用数据和日志
   const loadAllUsage = async () => {
@@ -117,8 +118,7 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
     table1Page * TABLE1_PAGE_SIZE
   );
 
-  // 表 2 分页计算
-  const table2TotalPages = Math.ceil(allLogs.length / TABLE2_PAGE_SIZE);
+  // 表 2 分页计算 - 简化，不计算总页数
   const table2PageData = allLogs.slice(
     (table2Page - 1) * TABLE2_PAGE_SIZE,
     table2Page * TABLE2_PAGE_SIZE
@@ -132,6 +132,17 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
   const handleTable2PageChange = (newPage: number) => {
     setTable2Page(newPage);
     setExpandedLogIds(new Set()); // 展开的行重置
+  };
+
+  // 使用 row key 来管理展开状态，而不是索引
+  const toggleExpand = (rowKey: string) => {
+    const newExpanded = new Set(expandedLogIds);
+    if (newExpanded.has(rowKey)) {
+      newExpanded.delete(rowKey);
+    } else {
+      newExpanded.add(rowKey);
+    }
+    setExpandedLogIds(newExpanded);
   };
 
   const formatNumber = (num: number): string => {
@@ -148,16 +159,6 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
       minute: '2-digit',
       second: '2-digit'
     });
-  };
-
-  const toggleExpand = (index: number) => {
-    const newExpanded = new Set(expandedLogIds);
-    if (newExpanded.has(index)) {
-      newExpanded.delete(index);
-    } else {
-      newExpanded.add(index);
-    }
-    setExpandedLogIds(newExpanded);
   };
 
   // 兼容旧格式和新格式
@@ -338,9 +339,10 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
+        {/* 表格容器 - 固定高度，内部可滚动 */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-auto max-h-[calc(100vh-280px)]">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-gray-900">
+            <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
               <tr>
                 <th className="text-left py-3 px-4 text-gray-500 dark:text-gray-400 font-medium w-12"></th>
                 <th className="text-left py-3 px-4 text-gray-500 dark:text-gray-400 font-medium">时间戳</th>
@@ -369,21 +371,20 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
               )}
               {/* 有数据 - 渲染数据行（使用分页数据） */}
               {!loadingLogs && table2PageData.map((log, pageIndex) => {
-                // 计算全局索引（用于展开状态）
-                const globalIndex = (table2Page - 1) * TABLE2_PAGE_SIZE + pageIndex;
                 const rowKey = `${log.agent_id}-${log.timestamp}-${pageIndex}`;
+                const isExpanded = expandedLogIds.has(rowKey as any);
                 return (
                   <React.Fragment key={rowKey}>
                     <tr
                       className={`border-t dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 ${
-                        expandedLogIds.has(globalIndex) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                        isExpanded ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                       }`}
-                      onClick={() => toggleExpand(globalIndex)}
+                      onClick={() => toggleExpand(rowKey)}
                     >
                       <td className="py-3 px-4 text-center">
                         <svg
                           className={`w-4 h-4 inline transition-transform ${
-                            expandedLogIds.has(globalIndex) ? 'rotate-180' : ''
+                            isExpanded ? 'rotate-180' : ''
                           }`}
                           fill="none"
                           stroke="currentColor"
@@ -418,7 +419,7 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
                     </tr>
 
                     {/* 展开的详细信息 - 放在可滚动容器中 */}
-                    {expandedLogIds.has(globalIndex) && (
+                    {isExpanded && (
                       <tr>
                         <td colSpan={8} className="border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
                           {/* 固定高度的可滚动容器 */}
@@ -500,11 +501,11 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
             </tbody>
           </table>
         </div>
-        {/* 分页控件 - 表 2 */}
+        {/* 分页控件 - 表 2 - 始终显示分页控件 */}
         {allLogs.length > 0 && (
           <div className="flex items-center justify-between mt-3">
             <span className="text-xs text-gray-500">
-              记录数：{allLogs.length}, 页数：{table2TotalPages} (当前第 {table2Page} 页)
+              记录数：{allLogs.length} (当前第 {table2Page} 页)
             </span>
             <button
               onClick={() => handleTable2PageChange(table2Page - 1)}
@@ -514,35 +515,30 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
               上一页
             </button>
             <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, table2TotalPages) }, (_, i) => {
-                let pageNum;
-                if (table2TotalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (table2Page <= 3) {
-                  pageNum = i + 1;
-                } else if (table2Page >= table2TotalPages - 2) {
-                  pageNum = table2TotalPages - 4 + i;
-                } else {
-                  pageNum = table2Page - 2 + i;
-                }
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => handleTable2PageChange(pageNum)}
-                    className={`w-8 h-8 text-sm rounded ${
-                      table2Page === pageNum
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
+              {Array.from({ length: 5 }, (_, i) => table2Page - 2 + i).filter(p => p >= 1).map((pageNum) => (
+                <button
+                  key={pageNum}
+                  onClick={() => handleTable2PageChange(pageNum)}
+                  className={`w-8 h-8 text-sm rounded ${
+                    table2Page === pageNum
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              ))}
             </div>
             <button
-              onClick={() => handleTable2PageChange(table2Page + 1)}
-              disabled={table2Page === table2TotalPages}
+              onClick={() => {
+                const nextPage = table2Page + 1
+                if (nextPage * TABLE2_PAGE_SIZE > allLogs.length) {
+                  setTable2Page(1) // 循环到第一页
+                } else {
+                  setTable2Page(nextPage)
+                }
+              }}
+              disabled={table2Page * TABLE2_PAGE_SIZE >= allLogs.length}
               className="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               下一页

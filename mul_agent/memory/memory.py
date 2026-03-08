@@ -82,6 +82,14 @@ class Memory:
                 result["to_agent"] = metadata["to_agent"]
             if "status" in metadata:
                 result["status"] = metadata["status"]
+            if "task_name" in metadata:
+                result["task_name"] = metadata["task_name"]
+            if "deadline" in metadata:
+                result["deadline"] = metadata["deadline"]
+            if "priority" in metadata:
+                result["priority"] = metadata["priority"]
+            if "scope" in metadata:
+                result["scope"] = metadata["scope"]
             return result
         except Exception:
             return None
@@ -289,22 +297,71 @@ class Memory:
         return results
 
     def create_handover(self, from_agent: str, to_agent: str, content: Dict[str, Any]) -> str:
-        """创建交接文档"""
+        """创建交接文档 - 增强版
+
+        content 应包含:
+        - task_name: 任务名称（格式：事情 - 人物-i 序号）
+        - description: 任务描述
+        - deadline: 截止时间
+        - scope: 作用范围
+        - priority: 优先级 (HIGH/MEDIUM/LOW)
+        - task_content: 具体任务内容
+        """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         handover_id = f"handover_{from_agent}_{to_agent}_{timestamp}"
         timestamp_iso = datetime.now().isoformat()
 
+        # 提取任务信息
+        task_name = content.get("task_name", f"task-{to_agent}-i{timestamp[-6:]}")
+        description = content.get("description", "无描述")
+        deadline = content.get("deadline", "未设置")
+        scope = content.get("scope", "未指定")
+        priority = content.get("priority", "MEDIUM")
+        task_content = content.get("task_content", "")
+
         # 构建 Markdown 内容
         lines = ["---"]
         lines.append(f"id: {handover_id}")
+        lines.append(f"task_name: {task_name}")
         lines.append(f"from_agent: {from_agent}")
         lines.append(f"to_agent: {to_agent}")
         lines.append(f"timestamp: {timestamp_iso}")
         lines.append(f"status: pending")
+        lines.append(f"priority: {priority}")
+        lines.append(f"deadline: {deadline}")
+        lines.append(f"scope: {scope}")
         lines.append("---\n")
 
-        lines.append(f"# 交接文档\n")
-        lines.append(self._format_content(content))
+        lines.append(f"# 任务交接单\n")
+        lines.append(f"## 基本信息\n")
+        lines.append(f"- **任务 ID**: {handover_id}")
+        lines.append(f"- **任务名称**: {task_name}")
+        lines.append(f"- **分发者**: {from_agent}")
+        lines.append(f"- **接收者**: {to_agent}")
+        lines.append(f"- **创建时间**: {timestamp_iso}")
+        lines.append("")
+
+        lines.append(f"## Description\n")
+        lines.append(f"{description}\n")
+
+        lines.append(f"## 有效期限\n")
+        lines.append(f"- **截止时间**: {deadline}")
+        lines.append(f"- **优先级**: {priority}")
+        lines.append("")
+
+        lines.append(f"## 作用范围\n")
+        lines.append(f"{scope}\n")
+
+        lines.append(f"## 任务状态\n")
+        lines.append(f"- [ ] 待接收")
+        lines.append(f"- [ ] 执行中")
+        lines.append(f"- [ ] 已完成\n")
+
+        lines.append(f"## 交接内容\n")
+        lines.append(f"{task_content}\n")
+
+        lines.append(f"## 执行结果\n")
+        lines.append(f"（由接收者填写）\n")
 
         filepath = self.handover_path / f"{handover_id}.md"
         with open(filepath, "w", encoding="utf-8") as f:

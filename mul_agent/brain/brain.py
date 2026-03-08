@@ -52,6 +52,7 @@ from mul_agent.brain.llm import LLMClient
 from mul_agent.brain.context_builder import ContextBuilder
 from mul_agent.brain.conversation import ConversationManager
 from mul_agent.brain.compressor import ContextCompressor
+from mul_agent.brain.memory_decision import MemoryDecisionSystem
 from mul_agent.memory.memory import Memory
 from mul_agent.network.agent_network import AgentNetwork
 from mul_agent.repositories import AgentRepository, TeamRepository
@@ -92,18 +93,30 @@ class Brain:
             config_manager=config_manager,
             agent_id=agent_id
         )
+
+        # Use LLM for decision making - MUST be before memory_decision and compressor
+        self.use_llm = self.llm.is_available()
+
         self.memory = Memory(agent_id=agent_id, config=self.memory_config)
+
+        # Initialize autonomous memory decision system
+        self.memory_decision = MemoryDecisionSystem(
+            llm_client=self.llm if self.use_llm else None,
+            memory=self.memory,
+            agent_id=agent_id
+        )
 
         # Initialize Skill/Hook/Command managers
         self.skill_manager = SkillManager(config_manager, agent_id)
         self.hook_manager = HookManager(config_manager, agent_id)
         self.command_manager = CommandManager(config_manager, agent_id)
 
-        # Use LLM for decision making
-        self.use_llm = self.llm.is_available()
-
         # Initialize context components
-        self.context_builder = ContextBuilder(config_manager, self.memory)
+        self.context_builder = ContextBuilder(
+            config_manager,
+            memory=self.memory,
+            memory_decision=self.memory_decision
+        )
         self.conversation = ConversationManager(memory=self.memory)
         self.compressor = ContextCompressor(
             llm_client=self.llm if self.use_llm else None,
@@ -301,6 +314,14 @@ class Brain:
             pre_tool_data.get("params", action.get("params", {}))
         )
 
+        # 记录路由执行情况到 Token Usage Center
+        self._record_route_execution(
+            route=action.get("route", "response"),
+            params=action.get("params", {}),
+            result=result,
+            user_input=user_input
+        )
+
         # 如果是 batch 路由，执行完成后让 LLM 汇总结果
         if action.get("route") == "batch" and result.get("status") == "success":
             self._update_state("thinking", "汇总批量执行结果...")
@@ -342,15 +363,18 @@ class Brain:
         if post_tool_data.get("result"):
             result = post_tool_data["result"]
 
-        # Save to memory
-        self.memory.write(
-            memory_type="short_term",
-            content={
-                "input": user_input,
-                "action": action,
-                "result": result
-            }
+        # Save to memory - using autonomous decision system
+        memory_decision = self.memory_decision.should_remember(
+            user_input=user_input,
+            result=result,
+            context={"scope": "conversation", "task_type": self._current_route}
         )
+
+        if memory_decision.get("should_remember"):
+            self.memory.write(
+                memory_type=memory_decision.get("memory_type", "short_term"),
+                content=memory_decision.get("content_to_save", {"input": user_input, "result": result})
+            )
 
         # Add to history
         self.state.add_to_history("assistant", result)
@@ -379,6 +403,97 @@ class Brain:
                 "session_id": self.state.get_session_id(),
                 "history_length": len(self.state.get_history())
             })
+
+    def _record_route_execution(
+        self,
+        route: str,
+        params: Dict[str, Any],
+        result: Dict[str, Any],
+        user_input: str
+    ) -> None:
+        """记录路由执行情况到 Token Usage Center
+
+        记录每次路由执行的详细信息，包括：
+        - 路由类型（bash, chat, response, batch 等）
+        - 执行的参数（命令、目标 Agent 等）
+        - 执行结果
+
+        Args:
+            route: 路由类型
+            params: 路由参数
+            result: 执行结果
+            user_input: 用户原始输入
+        """
+        if not self.llm.token_center:
+            return
+
+        # 根据路由类型确定 function 和 extra 信息
+        function = f"route_{route}"
+        extra = {
+            "route": route,
+            "user_input": user_input[:500] if user_input else "",
+        }
+
+        # 根据路由类型添加额外信息
+        if route == "bash":
+            extra["command"] = params.get("command", "")
+            extra["function_detail"] = f"bash:{params.get('command', '')[:100]}"
+        elif route == "chat":
+            extra["target_agent"] = params.get("agent_id", "")
+            extra["chat_message"] = params.get("message", "")[:500]
+            extra["function_detail"] = f"chat:{params.get('agent_id', '')}"
+        elif route == "batch":
+            commands = params.get("commands", [])
+            extra["batch_command_count"] = len(commands)
+            extra["batch_commands"] = [
+                {"route": cmd.get("route"), "params": cmd.get("params", {})}
+                for cmd in commands[:10]  # 只记录前 10 个
+            ]
+            extra["function_detail"] = f"batch:{len(commands)} commands"
+        elif route == "response":
+            extra["function_detail"] = "response"
+        elif route == "memory":
+            extra["memory_action"] = params.get("action", "")
+            extra["function_detail"] = f"memory:{params.get('action', '')}"
+        elif route == "skill":
+            extra["skill_id"] = params.get("skill_id", "")
+            extra["function_detail"] = f"skill:{params.get('skill_id', '')}"
+        elif route == "command":
+            extra["command_name"] = params.get("command", "")
+            extra["function_detail"] = f"command:{params.get('command', '')}"
+        elif route == "heart":
+            extra["function_detail"] = "heart:self-reflection"
+        elif route == "create_user":
+            extra["new_agent_name"] = params.get("name", "")
+            extra["function_detail"] = f"create_user:{params.get('name', '')}"
+        elif route == "file_edit":
+            extra["file_path"] = params.get("path", "")
+            extra["function_detail"] = f"file_edit:{params.get('path', '')}"
+        else:
+            extra["function_detail"] = route
+
+        # 添加结果信息
+        if result:
+            extra["result_status"] = result.get("status", "unknown")
+            if result.get("status") == "success":
+                result_data = result.get("data", {})
+                if isinstance(result_data, dict):
+                    # 提取简要结果
+                    if "message" in result_data:
+                        extra["result_preview"] = str(result_data["message"])[:500]
+                    elif "output" in result_data:
+                        extra["result_preview"] = str(result_data["output"])[:500]
+
+        # 记录 Token 使用（使用固定的 1 token 作为占位符，因为这不是 LLM 调用）
+        # 实际目的是记录路由执行情况
+        self.llm.token_center.record_usage(
+            agent_id=self.agent_id,
+            model="route_execution",
+            function=function,
+            input_tokens=0,
+            output_tokens=1,  # 用 1 token 占位，表示一次路由执行
+            extra=extra
+        )
 
     def should_compress_context(self, context: Dict[str, Any]) -> bool:
         """判断是否需要压缩上下文"""
@@ -672,7 +787,15 @@ class Brain:
 
     def _evolve(self, focus: str = "all", require_confirmation: bool = False) -> Dict[str, Any]:
         """自我进化 - 简化版"""
-        analysis = {"current_state": {"soul_version": self.soul.get("version"), "user_config": self.user.get("role", {}).get("title"), "skills_count": len(self.skill.get("skills", []))}, "issues_found": [], "can_evolve": self.soul.get("evolution_rules", {}).get("can_modify_self", False)}
+        analysis = {
+            "current_state": {
+                "soul_version": self.soul.get("version"),
+                "user_config": self.user.get("role", {}).get("title"),
+                "skills_count": len(self.skill.get("skills", []))
+            },
+            "issues_found": [],
+            "can_evolve": self.soul.get("evolution_rules", {}).get("can_modify_self", False)
+        }
         return {"status": "success", "analysis": analysis, "evolutions_applied": [], "suggestions": []}
 
     def _apply_evolution(self, changes: list) -> Dict[str, Any]:

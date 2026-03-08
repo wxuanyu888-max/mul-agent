@@ -163,3 +163,16 @@ export interface IntegrationFormData {
   key?: string;
   icon?: string;
 }
+
+// Chat Message Types
+export interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
+export interface ApiMessage {
+  role: string;
+  content: string;
+  timestamp?: string;
+}

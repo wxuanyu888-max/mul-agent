@@ -4,6 +4,7 @@ import { chatApi, infoApi } from '../../services/api';
 import { AgentStatePanel } from './AgentStatePanel';
 import { CommandAutocomplete, CommandSuggestion } from './CommandAutocomplete';
 import { SessionList } from './SessionList';
+import { Message, Agent } from '../../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -52,17 +53,6 @@ const AVAILABLE_COMMANDS: CommandSuggestion[] = [
     command_aliases: ['$', 'sh', '执行'],
   },
 ];
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: number;
-}
-
-interface Agent {
-  agent_id: string;
-  name: string;
-}
 
 // Markdown rendering styles
 const markdownComponents = {
@@ -172,7 +162,8 @@ export function ChatPanel() {
         messages.map((msg) => ({
           role: msg.role === 'user' ? 'user' : 'assistant',
           content: msg.content,
-          timestamp: Date.now(),
+          // Use timestamp from backend if available, otherwise use current time
+          timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
         }))
       );
       setCurrentSessionId(sessionId);

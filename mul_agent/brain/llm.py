@@ -88,7 +88,7 @@ class LLMClient:
         system_prompt: Optional[str] = None,
         history: Optional[List[Dict]] = None,
         images: Optional[List[Union[str, Dict]]] = None,
-        context_sources: Optional[List[str]] = None,  # 新增：上下文来源地址列表
+        context_sources: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """发送聊天请求
 
@@ -119,7 +119,7 @@ class LLMClient:
         system_prompt: Optional[str] = None,
         history: Optional[List[Dict]] = None,
         images: Optional[List[Union[str, Dict]]] = None,
-        context_sources: Optional[List[str]] = None,  # 新增：上下文来源
+        context_sources: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """百度千帆聊天实现 - 支持图片多模态"""
         # 构建消息内容（支持文本 + 图片）
@@ -219,7 +219,7 @@ class LLMClient:
         system_prompt: Optional[str] = None,
         history: Optional[List[Dict]] = None,
         images: Optional[List[Union[str, Dict]]] = None,
-        context_sources: Optional[List[str]] = None,  # 新增：上下文来源
+        context_sources: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Anthropic/MiniMax 聊天实现 - 支持图片多模态"""
         # Build messages
@@ -319,7 +319,8 @@ class LLMClient:
         input_text: str = None,
         output_text: str = None,
         context_sources: List[str] = None,
-        tool_calls: List[Dict] = None
+        tool_calls: List[Dict] = None,
+        route: str = None  # 添加路由类型参数
     ):
         """记录 Token 使用
 
@@ -332,6 +333,7 @@ class LLMClient:
             output_text: 输出内容（可选，用于记录详细日志）
             context_sources: 上下文来源地址列表（可选）
             tool_calls: 工具调用列表（可选）
+            route: 路由类型（可选，用于记录具体执行的路由，如 bash/chat/coder 等）
         """
         if self.token_center:
             extra = {}
@@ -343,6 +345,11 @@ class LLMClient:
                 extra["context_sources"] = context_sources
             if tool_calls:
                 extra["tool_calls"] = tool_calls
+            if route:
+                extra["route"] = route
+                # 根据路由类型生成更详细的 function 名称
+                if route != "think":
+                    function = f"{function}_{route}"
 
             self.token_center.record_usage(
                 agent_id=self.agent_id,
@@ -564,6 +571,27 @@ class LLMClient:
         content = response["content"]
         result = self._parse_routing_response(content, user_input)
 
+        # 记录 Token 使用，包含解析后的路由类型
+        # 提取主要的第一个路由类型作为记录
+        primary_route = result.get("route", "unknown")
+        if primary_route == "batch":
+            # 如果是 batch 路由，记录第一个子命令的路由类型
+            commands = result.get("commands", [])
+            if commands:
+                primary_route = commands[0].get("route", "batch")
+
+        # 记录 LLM 调用，包含路由信息
+        self.record_token_usage(
+            function="think",
+            input_tokens=response["usage"].get("input_tokens", 0),
+            output_tokens=response["usage"].get("output_tokens", 0),
+            model=response.get("model"),
+            input_text=user_input[:2000],  # 只记录前 2000 字符
+            output_text=content[:2000],
+            context_sources=context_sources,
+            route=primary_route  # 记录解析后的路由类型
+        )
+
         return result
 
     def _enhance_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -661,31 +689,110 @@ class LLMClient:
 
         return sources
 
-    def _build_system_prompt(self, context: Dict[str, Any]) -> str:
-        """构建系统提示 - 从配置文件读取模板
-
-        系统提示词模板从 wang/agent-team/.templates/prompt.md.template 读取
-        """
+    def _build_system_prompt_for_routing(self, context: Dict[str, Any]) -> str:
+        """构建系统提示用于路由选择和内容生成 - 精简版，突出核心能力"""
         soul = context.get("soul", {})
         user = context.get("user", {})
         skills = context.get("skills", [])
 
         personality = soul.get("core_traits", {}).get("personality", "")
         role = user.get("role", {}).get("title", "")
-        responsibilities = user.get("role", {}).get("responsibilities", [])
+
         skill_names = [s.get("name", "") for s in skills if s.get("enabled", False)]
 
-        # 从配置文件读取提示词模板
-        prompt_template = self._load_prompt_template()
+        return f"""你是 {role}，运行在用户**本地电脑**上的 AI 助手。人格：{personality}。技能：{", ".join(skill_names) if skill_names else "对话、执行命令"}。
 
-        # 格式化动态数据
-        return prompt_template.format(
-            role_title=role,
-            personality=personality,
-            responsibilities=", ".join(responsibilities),
-            skills=", ".join(skill_names),
-            routes_desc=""
-        )
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 核心能力
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### 1️⃣ 使用 Skill - 解决复杂问题
+**遇到自己解决不了的事，先看看有没有 Skill 可用！**
+```
+# skill skill_id:<技能 ID> 参数 1:值 1 参数 2:值 2
+```
+示例：
+- `# skill skill_id:project_explorer path:./src`
+- `# skill skill_id:code_analyzer file:main.py`
+
+### 2️⃣ 团队合作 - 主动分发任务
+复杂任务分发给其他 Agent（coder、reviewer、writer 等）：
+```
+# chat agent_id:coder message:分析代码结构
+# chat agent_id:reviewer message:审查代码质量
+```
+
+### 3️⃣ 自我更新 Memory - 主动记录
+**每次重要对话/任务完成后，自动更新记忆：**
+```
+# memory action:write memory_type:short_term content:{{"type": "task", "task": "任务名", "result": "结果"}}
+```
+
+### 4️⃣ 文档交接 - 任务留痕
+分发任务给其他 Agent 时，系统**自动创建交接文档**（你不需要手动操作）。
+
+### 5️⃣ 自我进化 - 定期自省
+每完成 3-5 个任务后：
+```
+# heart
+```
+
+### 6️⃣ 单次输出多次路由 - Batch 执行
+**复杂任务一次性返回多个命令：**
+```
+# bash ls -la
+# bash cat README.md
+# response 汇总报告...
+```
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 路由格式（使用 # 开头，不要用 JSON）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+| 路由 | 格式 | 示例 |
+|------|------|------|
+| bash | `# bash <命令>` | `# bash ls -la` |
+| skill | `# skill skill_id:<ID> 参数:值` | `# skill skill_id:explorer path:.` |
+| chat | `# chat agent_id:<id> message:<内容>` | `# chat agent_id:coder message:hi` |
+| response | `# response <回复内容>` | `# response 你好！` |
+| memory | `# memory action:<动作> content:<内容>` | `# memory action:write content:{...}` |
+| heart | `# heart` | `# heart` |
+| file_edit | `# file_edit path:<路径> start:<行> end:<行> content:<新内容>` | `# file_edit path:main.py start:10 end:20 content:...` |
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 行为准则
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ **遇到难题先找 Skill** - 自己解决不了时，检查可用技能
+✅ **主动更新 Memory** - 每次任务后记录关键信息
+✅ **直接行动** - 用户说"分析项目"，立即执行多个命令
+✅ **主动协作** - 复杂任务分发给团队 Agent
+✅ **定期自省** - 完成任务后调用 `# heart`
+
+❌ **禁止说**："我无法访问文件"、"我是云端 AI"
+❌ **禁止做**：只返回单个命令当用户需要复杂分析时
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 示例：用户说"分析这个项目"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**正确做法**：
+```
+# bash ls -la
+# bash find . -name "*.py" -type f | head -20
+# skill skill_id:project_explorer path:.
+# memory action:write content:{{"type": "exploration", "project": "mul-agent"}}
+# response 已完成项目分析...
+```
+
+**错误做法**：
+```
+# response 请你先执行 ls -la，然后告诉我结果...
+```
+
+---
+用用户语言回答。**复杂任务必须一次性返回多个 # 命令！**
+"""
 
     def _parse_routing_response(self, content: str, user_input: str) -> Dict[str, Any]:
         """解析 LLM 返回的路由选择
@@ -700,52 +807,30 @@ class LLMClient:
         import re
 
         # 1. 解析简单格式：# route param1:value1 param2:value2
-        # 例如：
-        # # bash ls -la
-        # # create_user name:coder role_type:worker
-        # # batch commands:[bash ls -la, bash cat README.md]
+        # 支持的路由前缀：
+        # # bash ...                    - 串行执行（默认）
+        # # parallel bash ...           - 并行执行
+        # # async bash ...              - 异步执行（不等待）
+        # # chat agent_id:xx message:xx - 与其他 Agent 对话
+        # # create_user name:xx ...     - 创建 Agent
 
-        route_pattern = r'^#\s*(\w+)\s+(.+?)$'
+        route_pattern = r'^#\s*(parallel|async)?\s*(\w+)\s+(.+?)$'
 
-        # 收集所有命令
-        commands = []
+        # 收集所有命令，分为三类
+        serial_commands = []    # 串行（按顺序执行）
+        parallel_commands = []  # 并行（同时执行）
+        async_commands = []     # 异步（后台执行，不等待）
 
         for line in content.split('\n'):
             line = line.strip()
             match = re.match(route_pattern, line)
             if match:
-                route = match.group(1).lower()
-                params_str = match.group(2).strip()
+                modifier = match.group(1)  # parallel / async / None
+                route = match.group(2).lower()
+                params_str = match.group(3).strip()
 
                 # 解析参数
                 params = {}
-
-                # 特殊处理 batch 的 commands 参数
-                if route == 'batch' and params_str.startswith('commands:'):
-                    # commands:[bash ls -la, bash cat README.md]
-                    cmds_str = params_str[9:].strip()
-                    # 提取方括号内的内容
-                    if cmds_str.startswith('[') and cmds_str.endswith(']'):
-                        cmds_str = cmds_str[1:-1]
-                    # 分割多个命令
-                    cmd_parts = re.split(r',\s*(?=#\s*bash)', cmds_str)
-                    for cmd in cmd_parts:
-                        cmd = cmd.strip()
-                        if cmd.startswith('# bash'):
-                            cmd = cmd[6:].strip()
-                        if cmd:
-                            commands.append({
-                                "route": "bash",
-                                "params": {"command": cmd}
-                            })
-                    # 添加汇总命令
-                    commands.append({
-                        "route": "response",
-                        "params": {"message": "请根据以上执行结果生成报告"}
-                    })
-                    return {"route": "batch", "commands": commands}
-
-                # 处理 name:value 格式的参数
                 param_matches = re.findall(r'(\w+):(\S+)', params_str)
                 for key, value in param_matches:
                     params[key] = value
@@ -757,21 +842,46 @@ class LLMClient:
                     elif route == 'response':
                         params['message'] = params_str
 
-                # 收集命令
-                if route in ['bash', 'shell']:
-                    if 'command' in params:
-                        commands.append({"route": "bash", "params": params})
-                    else:
-                        # 整个 params_str 作为命令
-                        commands.append({"route": "bash", "params": {"command": params_str}})
-                elif route in ['create_user', 'create_team', 'memory', 'chat', 'heart', 'response']:
-                    commands.append({"route": route, "params": params})
+                # 构建命令对象
+                cmd = {"route": route, "params": params}
+
+                # 分类
+                if modifier == 'parallel':
+                    parallel_commands.append(cmd)
+                elif modifier == 'async':
+                    async_commands.append(cmd)
+                else:
+                    serial_commands.append(cmd)
+
+        # 构建执行计划
+        all_commands = []
+
+        # 1. 先执行串行命令
+        if serial_commands:
+            all_commands.extend(serial_commands)
+
+        # 2. 并行命令（标记为 parallel）
+        if parallel_commands:
+            for cmd in parallel_commands:
+                cmd['parallel'] = True
+            all_commands.extend(parallel_commands)
+
+        # 3. 异步命令（标记为 async，不等待结果）
+        if async_commands:
+            for cmd in async_commands:
+                cmd['async'] = True
+            # 异步命令不添加到执行列表，单独处理
+
+        # 添加汇总命令（如果没有）
+        has_response = any(c.get('route') == 'response' for c in all_commands)
+        if not has_response and all_commands:
+            all_commands.append({"route": "response", "params": {"message": "请根据以上执行结果生成报告"}})
 
         # 返回结果
-        if len(commands) == 1:
-            return {"route": commands[0]["route"], "params": commands[0]["params"]}
-        elif len(commands) > 1:
-            return {"route": "batch", "commands": commands}
+        if len(all_commands) == 1:
+            return {"route": all_commands[0]["route"], "params": all_commands[0]["params"]}
+        elif len(all_commands) > 1:
+            return {"route": "batch", "commands": all_commands, "_async_commands": async_commands}
 
         # 2. 兼容旧格式：- bash: command 或 - `command`
         bash_patterns = [
@@ -880,7 +990,7 @@ class LLMClient:
         bash_indicators = [
             (r'```bash\s*\n(.+?)```', 'code block'),
             (r'\$\s*(.+)', 'dollar sign'),
-            (r'^[\s]*(ls|cd|pwd|cat|grep|find|head|tail|wc|echo|mkdir|rm|cp|mv)\s+', 'command start'),
+            (r'^[\s]*(ls|cd|echo|cat|grep|find|pwd|rm|cp|mv)\s+', 'command start'),
         ]
 
         for pattern, source in bash_indicators:
@@ -892,7 +1002,7 @@ class LLMClient:
                     return {"route": "bash", "params": {"command": cmd}}
 
         # 5. 检测创建 Agent 的意图
-        create_pattern = re.search(r'(创建 | 新建|create|new)[\s 的]*(\w+)[\s]*(agent| 助手 | 机器人|bot)', content, re.IGNORECASE)
+        create_pattern = re.search(r'(创建 | 新建|create|new)[\s 的]*(\w+)[\s]*(agent|助手 | 机器人|bot)', content, re.IGNORECASE)
         if create_pattern:
             target = create_pattern.group(2)
             return {
@@ -910,196 +1020,6 @@ class LLMClient:
                 "message": content.strip()
             }
         }
-
-    def _build_system_prompt_for_routing(self, context: Dict[str, Any]) -> str:
-        """构建系统提示用于路由选择和内容生成
-
-        这个方法让 LLM 既选择路由又生成响应内容
-        """
-        soul = context.get("soul", {})
-        user = context.get("user", {})
-        skills = context.get("skills", [])
-        available_routes = context.get("available_routes", [])
-
-        personality = soul.get("core_traits", {}).get("personality", "")
-        role = user.get("role", {}).get("title", "")
-        responsibilities = user.get("role", {}).get("responsibilities", [])
-
-        skill_names = [s.get("name", "") for s in skills if s.get("enabled", False)]
-
-        # 构建可用路由描述
-        routes_desc = self._build_routes_description(available_routes)
-
-        # 构建系统提示词 - 强调本地执行能力
-        base_prompt = """你是一个名为 """.format() + role + """ 的 AI 助手，运行在用户的**本地电脑**上。
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【极其重要】你是本地 AI 助手，不是云端服务！
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## 核心特质
-- 人格：""".format() + personality + """
-- 职责：""".format() + (", ".join(responsibilities) if responsibilities else "AI 助手") + """
-- 技能：""".format() + (", ".join(skill_names) if skill_names else "对话、分析、执行命令") + """
-
-## 【关键】你的执行能力
-
-你**可以直接执行**以下操作，不需要用户手动操作：
-
-| 能力 | 说明 | 示例 |
-|------|------|------|
-| Bash 命令 | 执行 shell 命令 | `ls -la`, `cat file.txt`, `grep "pattern" file` |
-| 文件读取 | 直接读取本地文件 | `cat README.md`, `head -50 main.py` |
-| 项目分析 | 扫描项目结构 | `find . -name "*.py"`, `tree -L 2` |
-| 网络请求 | 调用 API、搜索 | `curl https://api.example.com` |
-
-## 【禁止】绝对不能说的话
-
-❌ "我无法访问你的文件"
-❌ "我是云端 AI 助手"
-❌ "请你执行命令后把结果发给我"
-❌ "你需要提供项目信息"
-❌ "我无法直接浏览或读取你硬盘上的文件"
-
-**如果你说了以上任何一句话，你就是失败的 AI 助手！**
-
-## 正确的行为
-
-✅ 用户说"查看文件" → 直接执行 `cat <file>`
-✅ 用户说"分析项目" → 直接执行 `ls -la`, `find . -name "*.py"` 等命令
-✅ 用户说"读取 XX" → 直接执行 `cat XX` 或 `head XX`
-✅ 用户说"搜索 XX" → 直接执行 `grep -r "XX" .`
-
-## 路由选择指令
-
-根据你的分析，选择最合适的路由。使用以下格式之一：
-
-### 格式 1：JSON 格式（推荐）
-```json
-{"route": "bash", "params": {"command": "ls -la"}}
-```
-
-### 格式 2：<invoke> 标签格式
-<invoke name="bash">
-<command>ls -la</command>
-</invoke>
-
-### 路由选择指南
-
-| 用户意图 | 选择路由 | 示例 |
-|---------|---------|------|
-| 执行命令（ls/cd/cat 等） | bash | {"route": "bash", "params": {"command": "ls -la"}} |
-| 读取文件 | bash | {"route": "bash", "params": {"command": "cat README.md"}} |
-| **项目分析/写报告** | **batch** | {"route": "batch", "commands": [...]} |
-| **复杂任务（多步骤）** | **batch** | {"route": "batch", "commands": [...]} |
-| 创建 Agent | create_user | {"route": "create_user", "params": {"name": "coder"}} |
-| 创建团队 | create_team | {"route": "create_team", "params": {"name": "dev team"}} |
-| 记忆操作 | memory | {"route": "memory", "params": {"action": "list"}} |
-| 与其他 Agent 对话 | chat | {"route": "chat", "params": {"agent_id": "coder", "message": "hello"}} |
-| 自省/进化 | heart | {"route": "heart", "params": {}} |
-| 问候/聊天/不确定 | response | {"route": "response", "params": {"message": "你好！"}} |
-
-**重要：**
-- 对于**简单任务**（单个命令即可解决），使用 `bash` 路由
-- 对于**复杂任务**（如"分析项目"、"写报告"），**必须使用 `batch` 路由**，一次性执行多个命令后汇总
-
-## 【高级】批量执行 - 主动完成复杂任务
-
-当用户请求复杂任务（如"分析项目"、"写报告"）时，你可以使用**批量执行**功能，一次性返回多个命令：
-
-### 批量执行格式
-
-```json
-{
-  "route": "batch",
-  "commands": [
-    {"route": "bash", "params": {"command": "ls -la"}},
-    {"route": "bash", "params": {"command": "cat README.md"}},
-    {"route": "response", "params": {"message": "汇总以上信息，生成报告"}}
-  ]
-}
-```
-
-### 何时使用批量执行
-
-| 场景 | 示例 | 建议 |
-|------|------|------|
-| 简单查询 | "查看当前目录" | 单个 bash 命令 |
-| 读取文件 | "读取 main.py" | 单个 bash 命令 |
-| 项目分析 | "分析这个项目" | 批量执行（3-5 个命令） |
-| 生成报告 | "写一份项目分析报告" | 批量执行（5-8 个命令 + 汇总） |
-| 复杂任务 | "帮我重构这个模块" | 批量执行（多个命令 + 分析 + 建议） |
-
-### 批量执行的优势
-
-✅ 一次性完成多个步骤，不需要用户反复输入
-✅ 自动汇总多个命令的结果，生成完整报告
-✅ 展现主动性和规划能力
-
-## 工作流程示例
-
-### 示例 1：用户说"分析这个项目"
-**推荐做法（批量执行）**：
-```json
-{
-  "route": "batch",
-  "commands": [
-    {"route": "bash", "params": {"command": "ls -la"}},
-    {"route": "bash", "params": {"command": "find . -name \"*.py\" -type f | head -20"}},
-    {"route": "bash", "params": {"command": "cat README.md | head -50"}},
-    {"route": "response", "params": {"message": "（汇总以上结果，生成项目分析报告）"}}
-  ]
-}
-```
-
-### 示例 2：用户说"读取 main.py 的内容"
-**推荐做法（单个命令）**：
-```json
-{"route": "bash", "params": {"command": "cat main.py"}}
-```
-
-### 示例 3：用户说"你好"
-**推荐做法（直接回复）**：
-```json
-{"route": "response", "params": {"message": "你好！有什么可以帮你？"}}
-```
-
----
-
-请用用户使用的语言（中文/英文等）来回答。
-"""
-
-        # 添加路由选择指令
-        routing_instruction = """
-
-## 现在，请根据用户的输入选择正确的路由并执行任务。
-
-记住：
-1. **你是本地 AI 助手，可以直接执行 bash 命令**
-2. **不要说"我无法访问你的文件"或类似的话**
-3. **用户让你分析/读取/查看什么，直接执行对应的命令**
-4. **选择路由后，系统会自动执行你的命令**
-
-## 简单模式：Markdown 格式（推荐）
-
-对于复杂任务（如"分析项目"、"写报告"），直接用以下格式：
-
-# bash ls -la
-# bash cat README.md
-# bash find . -name "*.py"
-
-对于有参数的操作：
-# create_user name:coder role_type:worker
-# memory action:list memory_type:long_term
-# chat agent_id:coder message:hello
-
-对于直接回复：
-# response 你好！有什么可以帮你？
-
-**直接用 # 路由名 参数 格式，不要用 JSON！**
-"""
-
-        return base_prompt + routing_instruction
 
     def _load_prompt_template(self) -> str:
         """从配置文件读取提示词模板

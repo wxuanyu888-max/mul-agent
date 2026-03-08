@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryPanel } from '../components/memory/MemoryPanel';
+import { MemoryPanel } from './MemoryPanel';
 
 // Mock fetch API
 global.fetch = vi.fn();

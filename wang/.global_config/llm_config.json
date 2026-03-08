@@ -1,6 +1,0 @@
-{
-  "url": "https://api.anthropic.com/v1",
-  "provider": "anthropic",
-  "model": "claude-sonnet-4-20250514",
-  "key": ""
-}

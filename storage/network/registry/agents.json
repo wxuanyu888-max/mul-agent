@@ -3,11 +3,11 @@
     "core_brain": {
       "id": "core_brain",
       "status": "active",
-      "registered_at": "2026-03-07T23:22:45.174313",
-      "last_seen": "2026-03-07T23:22:45.174332",
+      "registered_at": "2026-03-08T12:19:34.818175",
+      "last_seen": "2026-03-08T12:19:34.818198",
       "metadata": {
         "role": "Team Coordinator",
-        "description": "Wang - Core brain agent",
+        "description": "核心大脑 - 上下文感知的智能协调者",
         "capabilities": [
           "planning",
           "coordination"
@@ -21,8 +21,8 @@
     "wangyue": {
       "id": "wangyue",
       "status": "active",
-      "registered_at": "2026-03-07T22:37:14.580307",
-      "last_seen": "2026-03-07T22:37:14.580318",
+      "registered_at": "2026-03-08T12:19:53.585060",
+      "last_seen": "2026-03-08T12:19:53.585077",
       "metadata": {
         "role": "主 Agent",
         "description": "",
@@ -31,5 +31,5 @@
       "capabilities": []
     }
   },
-  "updated_at": "2026-03-07T23:22:45.174528"
+  "updated_at": "2026-03-08T12:19:53.589084"
 }

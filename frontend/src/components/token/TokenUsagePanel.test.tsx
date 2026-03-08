@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { TokenUsagePanel } from '../components/token/TokenUsagePanel';
+import { TokenUsagePanel } from './TokenUsagePanel';
 
 // Mock fetch API
 global.fetch = vi.fn();

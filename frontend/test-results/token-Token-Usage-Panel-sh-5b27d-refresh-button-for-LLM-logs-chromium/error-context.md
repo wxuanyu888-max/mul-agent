@@ -15,12 +15,176 @@
         - img [ref=e21]
       - button "Token" [active] [ref=e25] [cursor=pointer]:
         - img [ref=e26]
-      - button "Keys" [ref=e28] [cursor=pointer]:
+      - button "Settings" [ref=e28] [cursor=pointer]:
         - img [ref=e29]
     - generic [ref=e34]:
       - text: MUL
       - text: Agent
   - generic [ref=e35]:
     - heading "Token" [level=1] [ref=e37]
-    - generic [ref=e40]: 加载中...
+    - generic [ref=e39]:
+      - heading "Token 使用统计" [level=2] [ref=e41]
+      - generic [ref=e42]:
+        - heading "表 1：按 Agent 统计汇总（第 1/1 页，共 2 条记录）" [level=3] [ref=e43]:
+          - text: 表 1：按 Agent 统计汇总
+          - generic [ref=e44]: （第 1/1 页，共 2 条记录）
+        - table [ref=e46]:
+          - rowgroup [ref=e47]:
+            - row "Agent ID 输入 Token 输出 Token 总 Token 调用次数 最后访问时间" [ref=e48]:
+              - columnheader "Agent ID" [ref=e49]
+              - columnheader "输入 Token" [ref=e50]
+              - columnheader "输出 Token" [ref=e51]
+              - columnheader "总 Token" [ref=e52]
+              - columnheader "调用次数" [ref=e53]
+              - columnheader "最后访问时间" [ref=e54]
+          - rowgroup [ref=e55]:
+            - row "core_brain 28,244 23,327 51,571 28 03/07 23:27:23" [ref=e56]:
+              - cell "core_brain" [ref=e57]
+              - cell "28,244" [ref=e58]
+              - cell "23,327" [ref=e59]
+              - cell "51,571" [ref=e60]
+              - cell "28" [ref=e61]
+              - cell "03/07 23:27:23" [ref=e62]
+            - row "wangyue 2,454 9,066 11,520 8 03/07 22:37:19" [ref=e63]:
+              - cell "wangyue" [ref=e64]
+              - cell "2,454" [ref=e65]
+              - cell "9,066" [ref=e66]
+              - cell "11,520" [ref=e67]
+              - cell "8" [ref=e68]
+              - cell "03/07 22:37:19" [ref=e69]
+          - rowgroup [ref=e70]:
+            - row "合计 30,698 32,393 63,091 36" [ref=e71]:
+              - cell "合计" [ref=e72]
+              - cell "30,698" [ref=e73]
+              - cell "32,393" [ref=e74]
+              - cell "63,091" [ref=e75]
+              - cell "36" [ref=e76]
+              - cell [ref=e77]
+      - generic [ref=e78]:
+        - generic [ref=e80]:
+          - heading "表 2：LLM 调用明细" [level=3] [ref=e81]
+          - generic [ref=e82]:
+            - generic [ref=e83]: (共 36 条记录)
+            - generic [ref=e84]: • 最后更新：11:34:28
+            - generic [ref=e85]: 自动同步中
+        - table [ref=e88]:
+          - rowgroup [ref=e89]:
+            - row "时间戳 Agent 模型 功能 输入 输出 总计" [ref=e90]:
+              - columnheader [ref=e91]
+              - columnheader "时间戳" [ref=e92]
+              - columnheader "Agent" [ref=e93]
+              - columnheader "模型" [ref=e94]
+              - columnheader "功能" [ref=e95]
+              - columnheader "输入" [ref=e96]
+              - columnheader "输出" [ref=e97]
+              - columnheader "总计" [ref=e98]
+          - rowgroup [ref=e99]:
+            - row "03/07 23:27:23 core_brain qwen3.5-plus 对话 4,019 1,372 5,391" [ref=e100] [cursor=pointer]:
+              - cell [ref=e101]:
+                - img [ref=e102]
+              - cell "03/07 23:27:23" [ref=e104]
+              - cell "core_brain" [ref=e105]
+              - cell "qwen3.5-plus" [ref=e106]
+              - cell "对话" [ref=e107]
+              - cell "4,019" [ref=e108]
+              - cell "1,372" [ref=e109]
+              - cell "5,391" [ref=e110]
+            - row "03/07 23:27:00 core_brain qwen3.5-plus 对话 3,054 959 4,013" [ref=e111] [cursor=pointer]:
+              - cell [ref=e112]:
+                - img [ref=e113]
+              - cell "03/07 23:27:00" [ref=e115]
+              - cell "core_brain" [ref=e116]
+              - cell "qwen3.5-plus" [ref=e117]
+              - cell "对话" [ref=e118]
+              - cell "3,054" [ref=e119]
+              - cell "959" [ref=e120]
+              - cell "4,013" [ref=e121]
+            - row "03/07 23:18:36 core_brain qwen3.5-plus 对话 2,013 439 2,452" [ref=e122] [cursor=pointer]:
+              - cell [ref=e123]:
+                - img [ref=e124]
+              - cell "03/07 23:18:36" [ref=e126]
+              - cell "core_brain" [ref=e127]
+              - cell "qwen3.5-plus" [ref=e128]
+              - cell "对话" [ref=e129]
+              - cell "2,013" [ref=e130]
+              - cell "439" [ref=e131]
+              - cell "2,452" [ref=e132]
+            - row "03/07 22:53:30 core_brain qwen3.5-plus 对话 1,717 379 2,096" [ref=e133] [cursor=pointer]:
+              - cell [ref=e134]:
+                - img [ref=e135]
+              - cell "03/07 22:53:30" [ref=e137]
+              - cell "core_brain" [ref=e138]
+              - cell "qwen3.5-plus" [ref=e139]
+              - cell "对话" [ref=e140]
+              - cell "1,717" [ref=e141]
+              - cell "379" [ref=e142]
+              - cell "2,096" [ref=e143]
+            - row "03/07 22:37:19 wangyue qwen3.5-plus 对话 1,556 212 1,768" [ref=e144] [cursor=pointer]:
+              - cell [ref=e145]:
+                - img [ref=e146]
+              - cell "03/07 22:37:19" [ref=e148]
+              - cell "wangyue" [ref=e149]
+              - cell "qwen3.5-plus" [ref=e150]
+              - cell "对话" [ref=e151]
+              - cell "1,556" [ref=e152]
+              - cell "212" [ref=e153]
+              - cell "1,768" [ref=e154]
+            - row "03/07 22:26:20 core_brain qwen3.5-plus 对话 685 614 1,299" [ref=e155] [cursor=pointer]:
+              - cell [ref=e156]:
+                - img [ref=e157]
+              - cell "03/07 22:26:20" [ref=e159]
+              - cell "core_brain" [ref=e160]
+              - cell "qwen3.5-plus" [ref=e161]
+              - cell "对话" [ref=e162]
+              - cell "685" [ref=e163]
+              - cell "614" [ref=e164]
+              - cell "1,299" [ref=e165]
+            - row "03/07 22:23:44 core_brain qwen3.5-plus 对话 83 2,077 2,160" [ref=e166] [cursor=pointer]:
+              - cell [ref=e167]:
+                - img [ref=e168]
+              - cell "03/07 22:23:44" [ref=e170]
+              - cell "core_brain" [ref=e171]
+              - cell "qwen3.5-plus" [ref=e172]
+              - cell "对话" [ref=e173]
+              - cell "83" [ref=e174]
+              - cell "2,077" [ref=e175]
+              - cell "2,160" [ref=e176]
+            - row "03/07 22:10:02 core_brain qwen3.5-plus 对话 345 443 788" [ref=e177] [cursor=pointer]:
+              - cell [ref=e178]:
+                - img [ref=e179]
+              - cell "03/07 22:10:02" [ref=e181]
+              - cell "core_brain" [ref=e182]
+              - cell "qwen3.5-plus" [ref=e183]
+              - cell "对话" [ref=e184]
+              - cell "345" [ref=e185]
+              - cell "443" [ref=e186]
+              - cell "788" [ref=e187]
+            - row "03/07 22:09:38 core_brain qwen3.5-plus 对话 83 514 597" [ref=e188] [cursor=pointer]:
+              - cell [ref=e189]:
+                - img [ref=e190]
+              - cell "03/07 22:09:38" [ref=e192]
+              - cell "core_brain" [ref=e193]
+              - cell "qwen3.5-plus" [ref=e194]
+              - cell "对话" [ref=e195]
+              - cell "83" [ref=e196]
+              - cell "514" [ref=e197]
+              - cell "597" [ref=e198]
+            - row "03/07 21:42:54 core_brain qwen3.5-plus 对话 1,900 510 2,410" [ref=e199] [cursor=pointer]:
+              - cell [ref=e200]:
+                - img [ref=e201]
+              - cell "03/07 21:42:54" [ref=e203]
+              - cell "core_brain" [ref=e204]
+              - cell "qwen3.5-plus" [ref=e205]
+              - cell "对话" [ref=e206]
+              - cell "1,900" [ref=e207]
+              - cell "510" [ref=e208]
+              - cell "2,410" [ref=e209]
+        - generic [ref=e210]:
+          - generic [ref=e211]: 记录数：36 (当前第 1 页)
+          - button "上一页" [disabled] [ref=e212]
+          - generic [ref=e213]:
+            - button "1" [ref=e214] [cursor=pointer]
+            - button "2" [ref=e215] [cursor=pointer]
+            - button "3" [ref=e216] [cursor=pointer]
+          - button "下一页" [ref=e217] [cursor=pointer]
 ```

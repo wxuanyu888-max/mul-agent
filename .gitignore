@@ -38,34 +38,37 @@ ENV/
 # These are agent memory and conversation data - DO NOT COMMIT
 
 # Memory files (short-term and long-term) - auto-generated
-storage/memory/short_term/core_brain/*.md
-storage/memory/short_term/core_brain/*.json
-storage/memory/short_term/*/
-storage/memory/long_term/core_brain/*.json
-storage/memory/long_term/*/
-!storage/memory/long_term/core_brain/learning_001.md
+storage/memory/short_term/*/*.md
+storage/memory/short_term/*/*.json
+storage/memory/long_term/*/*.json
 
 # Handover memory
 storage/memory/handover/*.md
 storage/memory/handover/*.json
 
-# Snapshots
-storage/snapshots/*.md
-
 # Conversation history
 storage/conversations/*/
-
-# Agent configs (auto-generated)
-storage/agent_config/*.json
-storage/agent_config/*/*.json
 
 # Logs
 storage/logs/*.log
 storage/logs/*.jsonl
-storage/info/*.json
 
-# Global storage (auto-generated)
-storage/global/
+# Network queue (runtime data)
+storage/network/queue/
+
+# ===== WANG - Claude Code Config =====
+# Runtime data (auto-generated)
+
+# Token usage statistics
+wang/token_usage/*.json
+
+# Agent runtime data
+wang/agent-team/core_brain/*.json
+wang/agent-team/wangyue/*.json
+
+# Frontend test results
+frontend/test-results/
+frontend/playwright-report/
 
 # Frontend build
 frontend/node_modules/
@@ -78,10 +81,10 @@ frontend/*.d.ts
 !frontend/postcss.config.js
 !frontend/tailwind.config.js
 
-# Storage runtime data
-storage/network/queue/
-storage/message_queue/
-storage/agents/agent_*/
+# Python test coverage
+htmlcov/
+.coverage
 
-# Temporary test directories
-tests/agent_collaboration_test/
+# Scripts (runtime data)
+scripts/*.pyc
+scripts/__pycache__/

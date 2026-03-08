@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { WorkflowCanvas } from '../components/workflow/WorkflowCanvas';
+import { WorkflowCanvas } from './WorkflowCanvas';
 
 describe('WorkflowCanvas', () => {
   beforeEach(() => {

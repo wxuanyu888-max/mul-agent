@@ -14,6 +14,7 @@ import type {
   TokenUsageDetails,
   AllAgentsTokenUsage,
   Integration,
+  ApiMessage,
 } from '../types';
 
 // Use relative path to work with Vite proxy in development
@@ -44,7 +45,7 @@ export const chatApi = {
     ),
 
   getSessionMessages: (sessionId: string, agentId?: string, limit: number = 100) =>
-    api.get<{ session_id: string; messages: Array<{ role: string; content: string; timestamp?: string }>; total: number }>(
+    api.get<{ session_id: string; messages: ApiMessage[]; total: number }>(
       `/chat/session/${sessionId}`,
       { params: { agent_id: agentId, limit } }
     ),
@@ -84,6 +85,15 @@ export const memoryApi = {
 
   getHandover: (agentId: string = 'core_brain') =>
     api.get<{ memories: Memory[] }>('/memory/handover', { params: { agent_id: agentId } }),
+
+  getStats: (agentId: string = 'core_brain') =>
+    api.get<{ agent_id: string; stats: Record<string, any> }>('/memory/stats', { params: { agent_id: agentId } }),
+
+  search: (query: string, agentId: string = 'core_brain', memoryType?: string, limit: number = 20) =>
+    api.get<{ query: string; results: Memory[]; total: number }>('/memory/search', { params: { agent_id: agentId, query, memory_type: memoryType, limit } }),
+
+  getSummary: (agentId: string = 'core_brain', memoryType: string = 'short_term') =>
+    api.get<{ status: string; memory_type: string; memory_count: number; topics: string[] }>('/memory/summary', { params: { agent_id: agentId, memory_type: memoryType } }),
 
   write: (content: string, agentId: string = 'core_brain', memoryType: string = 'short_term', metadata?: Record<string, unknown>) =>
     api.post<{ status: string; memory_id: string; path: string }>('/memory/write', {
