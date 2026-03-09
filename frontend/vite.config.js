@@ -7,7 +7,7 @@ export default defineConfig({
         host: true,
         proxy: {
             '/api': {
-                target: 'http://localhost:8000',
+                target: 'http://localhost:8080',
                 changeOrigin: true,
                 configure: function (proxy, options) {
                     proxy.on('proxyReq', function (proxyReq, req, res) {

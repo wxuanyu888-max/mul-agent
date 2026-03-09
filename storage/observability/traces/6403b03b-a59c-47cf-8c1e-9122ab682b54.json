@@ -1,0 +1,23 @@
+{
+  "trace_id": "6403b03b-a59c-47cf-8c1e-9122ab682b54",
+  "spans": [
+    {
+      "trace_id": "6403b03b-a59c-47cf-8c1e-9122ab682b54",
+      "span_id": "e75c02d7-fc7",
+      "name": "Test Operation",
+      "type": "custom",
+      "start_time": 1772974550.7834408,
+      "end_time": 1772974550.890362,
+      "duration_ms": 106.92119598388672,
+      "status": "success",
+      "agent_id": "test_agent",
+      "session_id": "test_session",
+      "tags": {
+        "test_tag": "value"
+      },
+      "metrics": {},
+      "error": null,
+      "parent_span_id": null
+    }
+  ]
+}

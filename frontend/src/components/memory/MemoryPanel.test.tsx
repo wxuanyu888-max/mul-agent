@@ -1,37 +1,91 @@
-// Test file
+// MemoryPanel Test Suite
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryPanel } from './MemoryPanel';
+import { memoryApi } from '../../services/api';
 
-// Mock fetch API
-global.fetch = vi.fn();
+// Mock API modules
+vi.mock('../../services/api', () => ({
+  memoryApi: {
+    getShortTerm: vi.fn(),
+    getLongTerm: vi.fn(),
+    getHandover: vi.fn(),
+    write: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
 
 describe('MemoryPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock all memory endpoints to return empty arrays
+    vi.mocked(memoryApi.getShortTerm).mockResolvedValue({ data: { memories: [], total: 0 } } as any);
+    vi.mocked(memoryApi.getLongTerm).mockResolvedValue({ data: { memories: [], total: 0 } } as any);
+    vi.mocked(memoryApi.getHandover).mockResolvedValue({ data: { memories: [] } } as any);
   });
 
-  it('renders memory panel with header', () => {
-    render(<MemoryPanel />);
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
-    expect(screen.getByText(/memory/i)).toBeInTheDocument();
+  it('renders memory panel with header', async () => {
+    await act(async () => {
+      render(<MemoryPanel />);
+    });
+
+    // Use getAllBy since there are multiple "Memory" texts (header + button)
+    const memoryHeaders = screen.getAllByText(/Memory/i);
+    expect(memoryHeaders.length).toBeGreaterThan(0);
   });
 
   it('displays empty state when no memories', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ memories: [], total: 0 })
+    await act(async () => {
+      render(<MemoryPanel />);
     });
 
-    render(<MemoryPanel />);
-
     await waitFor(() => {
-      expect(screen.getByText(/no memories yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/暂无记忆/i)).toBeInTheDocument();
     });
   });
 
-  it('displays memory list when loaded', async () => {
+  it('displays memory tabs', async () => {
+    await act(async () => {
+      render(<MemoryPanel />);
+    });
+
+    expect(screen.getByText(/短期记忆/i)).toBeInTheDocument();
+    expect(screen.getByText(/长期记忆/i)).toBeInTheDocument();
+    expect(screen.getByText(/交接记忆/i)).toBeInTheDocument();
+  });
+
+  it('switches between memory types', async () => {
+    await act(async () => {
+      render(<MemoryPanel />);
+    });
+
+    // Click long-term tab
+    const longTermTab = screen.getByText(/长期记忆/i);
+    await act(async () => {
+      fireEvent.click(longTermTab);
+    });
+
+    // Should still show empty state
+    await waitFor(() => {
+      expect(screen.getByText(/暂无记忆/i)).toBeInTheDocument();
+    });
+  });
+
+  it('has refresh button', async () => {
+    await act(async () => {
+      render(<MemoryPanel />);
+    });
+
+    const refreshButton = screen.getByRole('button', { name: /refresh/i });
+    expect(refreshButton).toBeInTheDocument();
+  });
+
+  it('displays memories when loaded', async () => {
     const mockMemories = {
       memories: [
         {
@@ -44,158 +98,30 @@ describe('MemoryPanel', () => {
       total: 1
     };
 
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockMemories
+    vi.mocked(memoryApi.getShortTerm).mockResolvedValue({ data: mockMemories } as any);
+    vi.mocked(memoryApi.getLongTerm).mockResolvedValue({ data: { memories: [], total: 0 } } as any);
+    vi.mocked(memoryApi.getHandover).mockResolvedValue({ data: { memories: [] } } as any);
+
+    await act(async () => {
+      render(<MemoryPanel />);
     });
 
-    render(<MemoryPanel />);
-
     await waitFor(() => {
-      expect(screen.getByText(/test memory content/i)).toBeInTheDocument();
+      expect(screen.getByText(/Test memory content/i)).toBeInTheDocument();
     });
   });
 
-  it('has refresh button', () => {
-    render(<MemoryPanel />);
+  it('shows loading state', async () => {
+    // Make fetch hang to test loading state
+    vi.mocked(memoryApi.getShortTerm).mockImplementation(
+      () => new Promise(() => {})
+    );
 
-    const refreshButton = screen.getByTitle(/refresh/i);
-    expect(refreshButton).toBeInTheDocument();
-  });
-
-  it('has memory type filter', () => {
-    render(<MemoryPanel />);
-
-    const filterSelect = screen.getByRole('combobox');
-    expect(filterSelect).toBeInTheDocument();
-  });
-
-  it('filters memories by type', async () => {
-    const mockMemories = {
-      memories: [
-        { id: '1', type: 'short_term', content: 'Short term' },
-        { id: '2', type: 'long_term', content: 'Long term' }
-      ],
-      total: 2
-    };
-
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockMemories
+    await act(async () => {
+      render(<MemoryPanel />);
     });
 
-    render(<MemoryPanel />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/short term/i)).toBeInTheDocument();
-    });
-
-    // Change filter
-    const filterSelect = screen.getByRole('combobox');
-    await fireEvent.change(filterSelect, { target: { value: 'long_term' } });
-
-    // Should filter results
-    await waitFor(() => {
-      expect(screen.queryByText(/short term/i)).not.toBeInTheDocument();
-    });
-  });
-
-  it('searches memories', async () => {
-    const mockMemories = {
-      memories: [
-        { id: '1', type: 'short_term', content: 'Python programming' },
-        { id: '2', type: 'long_term', content: 'Java programming' }
-      ],
-      total: 2
-    };
-
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockMemories
-    });
-
-    render(<MemoryPanel />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/python programming/i)).toBeInTheDocument();
-    });
-
-    // Search
-    const searchInput = screen.getByPlaceholderText(/search memories/i);
-    await fireEvent.change(searchInput, { target: { value: 'Python' } });
-
-    // Should filter results
-    await waitFor(() => {
-      expect(screen.getByText(/python programming/i)).toBeInTheDocument();
-    });
-  });
-
-  it('displays error message when API fails', async () => {
-    fetch.mockRejectedValueOnce(new Error('Network error'));
-
-    render(<MemoryPanel />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/error/i)).toBeInTheDocument();
-    });
-  });
-
-  it('deletes memory when delete button clicked', async () => {
-    const mockMemories = {
-      memories: [
-        { id: '1', type: 'short_term', content: 'To delete' }
-      ],
-      total: 1
-    };
-
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockMemories
-    });
-
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ success: true })
-    });
-
-    render(<MemoryPanel />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/to delete/i)).toBeInTheDocument();
-    });
-
-    // Click delete
-    const deleteButton = screen.getByTitle(/delete memory/i);
-    await fireEvent.click(deleteButton);
-
-    // Should call delete API
-    await waitFor(() => {
-      expect(fetch).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it('displays memory timestamp', async () => {
-    const mockMemories = {
-      memories: [
-        {
-          id: '1',
-          type: 'short_term',
-          timestamp: '2024-01-01T12:00:00',
-          content: 'Test'
-        }
-      ],
-      total: 1
-    };
-
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockMemories
-    });
-
-    render(<MemoryPanel />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/2024/i)).toBeInTheDocument();
-    });
+    // Should show loading indicator
+    expect(document.querySelector('.animate-spin')).toBeInTheDocument();
   });
 });

@@ -51,6 +51,7 @@ class HookManager:
         builtin_hooks = [
             "mul_agent.hooks.builtin.LogInvocationHook",
             "mul_agent.hooks.builtin.FormatOutputHook",
+            "mul_agent.hooks.permission.PermissionHook",
         ]
 
         for hook_path in builtin_hooks:

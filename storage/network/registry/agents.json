@@ -3,11 +3,11 @@
     "core_brain": {
       "id": "core_brain",
       "status": "active",
-      "registered_at": "2026-03-08T12:19:34.818175",
-      "last_seen": "2026-03-08T12:19:34.818198",
+      "registered_at": "2026-03-08T21:28:20.811050",
+      "last_seen": "2026-03-08T21:28:20.811066",
       "metadata": {
         "role": "Team Coordinator",
-        "description": "核心大脑 - 上下文感知的智能协调者",
+        "description": "Wang - Core brain agent",
         "capabilities": [
           "planning",
           "coordination"
@@ -21,15 +21,57 @@
     "wangyue": {
       "id": "wangyue",
       "status": "active",
-      "registered_at": "2026-03-08T12:19:53.585060",
-      "last_seen": "2026-03-08T12:19:53.585077",
+      "registered_at": "2026-03-08T21:15:47.932270",
+      "last_seen": "2026-03-08T21:15:47.932279",
       "metadata": {
-        "role": "主 Agent",
+        "role": "用户助理",
         "description": "",
         "capabilities": []
       },
       "capabilities": []
+    },
+    "bob": {
+      "id": "bob",
+      "status": "active",
+      "registered_at": "2026-03-08T19:56:26.715718",
+      "last_seen": "2026-03-08T19:56:26.715729",
+      "metadata": {
+        "role": "技术规划师",
+        "description": "",
+        "capabilities": []
+      },
+      "capabilities": []
+    },
+    "alice": {
+      "id": "alice",
+      "status": "active",
+      "registered_at": "2026-03-08T19:56:26.523015",
+      "last_seen": "2026-03-08T19:56:26.523027",
+      "metadata": {
+        "role": "代码工程师",
+        "description": "",
+        "capabilities": []
+      },
+      "capabilities": []
+    },
+    "test_agent": {
+      "id": "test_agent",
+      "status": "active",
+      "registered_at": "2026-03-08T20:05:07.934240",
+      "last_seen": "2026-03-08T20:05:07.934261",
+      "metadata": {
+        "role": "Team Coordinator",
+        "description": "Wang - Core brain agent",
+        "capabilities": [
+          "planning",
+          "coordination"
+        ]
+      },
+      "capabilities": [
+        "planning",
+        "coordination"
+      ]
     }
   },
-  "updated_at": "2026-03-08T12:19:53.589084"
+  "updated_at": "2026-03-08T21:28:20.811169"
 }

@@ -1,0 +1,3 @@
+{"name": "test_metric", "value": 100.5, "timestamp": 1772974550.891978, "tags": {"unit": "ms", "agent_id": "test_agent"}}
+{"name": "test_metric", "value": 150.2, "timestamp": 1772974550.892292, "tags": {"unit": "ms", "agent_id": "test_agent"}}
+{"name": "test_metric", "value": 90.8, "timestamp": 1772974550.8924632, "tags": {"unit": "ms", "agent_id": "test_agent"}}

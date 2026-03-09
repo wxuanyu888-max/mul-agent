@@ -1,4 +1,4 @@
-"""Agent Daemon - 后台守护机制"""
+"""Agent Daemon - 定时唤醒调度器"""
 
 import time
 import threading
@@ -36,13 +36,17 @@ class ScheduledTask:
 
 class AgentDaemon:
     """
-    Agent 守护进程
+    Agent 定时唤醒调度器
 
     功能：
-    1. 状态管理：工作/休息切换
-    2. 空闲检测：自动进入休息状态
-    3. 定时任务：定期执行任务
-    4. 自我成长：调用 heart 路由
+    1. 定时唤醒：按设定的间隔自动唤醒 Agent 执行任务
+    2. 状态管理：工作/休息切换，空闲时自动进入休息状态
+    3. 任务调度：支持多种路由 (heart/bash/chat/memory 等) 的定时执行
+    4. 自动化场景：
+       - 自我成长：定期调用 heart 路由进行自省
+       - 邮件整理：定期调用 bash 或自定义路由处理邮件
+       - 数据同步：定期拉取外部数据
+       - 健康检查：定期检查服务状态
     """
 
     def __init__(
@@ -156,7 +160,7 @@ class AgentDaemon:
                 self.on_state_change(old_state, self.state)
 
     def get_status(self) -> Dict[str, Any]:
-        """获取守护进程状态"""
+        """获取定时唤醒调度器状态"""
         idle_time = time.time() - self.last_activity
 
         return {
@@ -202,7 +206,7 @@ class AgentDaemon:
         return result
 
     def _daemon_loop(self):
-        """守护进程主循环"""
+        """定时唤醒主循环"""
         while self._running:
             try:
                 # 检查是否应该进入休息状态
@@ -229,7 +233,7 @@ class AgentDaemon:
                 time.sleep(self.check_interval)
 
     def start(self):
-        """启动守护进程"""
+        """启动定时唤醒调度器"""
         if self._running:
             return
 
@@ -238,7 +242,7 @@ class AgentDaemon:
         self._daemon_thread.start()
 
     def stop(self):
-        """停止守护进程"""
+        """停止定时唤醒调度器"""
         self._running = False
         if self._daemon_thread:
             self._daemon_thread.join(timeout=5)
@@ -266,7 +270,7 @@ def create_daemon(
     idle_timeout: int = 300,
     grow_interval: int = 3600
 ) -> AgentDaemon:
-    """创建并配置守护进程"""
+    """创建并配置定时唤醒调度器"""
     config_manager = ConfigManager(config_dir)
     daemon = AgentDaemon(
         config_manager=config_manager,

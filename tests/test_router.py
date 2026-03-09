@@ -52,7 +52,15 @@ class TestRouter:
 
         assert len(routes) > 0
         route_names = [r["name"] for r in routes]
-        assert "create_user" in route_names
+
+        # 核心路由
         assert "bash" in route_names
+        assert "file_edit" in route_names
+        assert "chat" in route_names
         assert "heart" in route_names
-        assert "memory" in route_names
+        assert "create_user" in route_names
+        assert "create_team" in route_names
+
+        # 新增路由
+        assert "glob" in route_names
+        assert "grep" in route_names

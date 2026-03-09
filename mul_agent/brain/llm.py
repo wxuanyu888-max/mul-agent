@@ -531,26 +531,29 @@ class LLMClient:
 
         return tool_calls
 
-    def think(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """让 LLM 思考并决定路由 - 支持路由选择
+    def think_with_routes(
+        self,
+        user_input: str,
+        context: Dict[str, Any],
+        allowed_routes: List[str] = None,
+        workspace_info: str = None
+    ) -> Dict[str, Any]:
+        """让 LLM 思考并决定路由 - 限制可用路由
 
         Args:
             user_input: 用户输入
-            context: 上下文信息，包含：
-                - history: 对话历史
-                - text_contents: 文本内容（用于提取上下文来源）
-                - configs: 配置信息
-                - soul/user/skill: 配置文件内容
-                - available_routes: 可用路由列表
+            context: 上下文信息
+            allowed_routes: 允许的路由列表，默认 ["bash", "file_edit", "chat", "create_user", "create_team"]
+            workspace_info: 工作区信息（可选）
 
         Returns:
             LLM 响应结果，包含 route 和 params
         """
-        # 增强上下文：添加配置文件内容
-        enhanced_context = self._enhance_context(context)
+        # 增强上下文：添加配置文件内容和可用路由信息
+        enhanced_context = self._enhance_context(context, allowed_routes)
 
         # Build system prompt - 让 LLM 决定路由并生成响应
-        system_prompt = self._build_system_prompt_for_routing(enhanced_context)
+        system_prompt = self._build_system_prompt_for_routing(enhanced_context, workspace_info)
 
         # Build history from context
         history = context.get("history", [])
@@ -571,30 +574,54 @@ class LLMClient:
         content = response["content"]
         result = self._parse_routing_response(content, user_input)
 
-        # 记录 Token 使用，包含解析后的路由类型
-        # 提取主要的第一个路由类型作为记录
-        primary_route = result.get("route", "unknown")
-        if primary_route == "batch":
-            # 如果是 batch 路由，记录第一个子命令的路由类型
-            commands = result.get("commands", [])
-            if commands:
-                primary_route = commands[0].get("route", "batch")
+        # 验证路由是否在允许的列表中
+        if allowed_routes:
+            route = result.get("route")
+            # 处理 batch 路由
+            if route == "batch":
+                commands = result.get("commands", [])
+                for cmd in commands:
+                    if cmd.get("route") not in allowed_routes + ["response", "batch"]:
+                        # 不允许的路由，转换为 response
+                        cmd["route"] = "response"
+            # 处理单个路由
+            elif route not in allowed_routes + ["response", "skill", "batch"]:
+                # 不允许的路由，转换为 file_edit
+                result = {"route": "file_edit", "params": {"description": user_input}}
 
-        # 记录 LLM 调用，包含路由信息
+        # 记录 Token 使用
+        primary_route = result.get("route", "unknown")
         self.record_token_usage(
             function="think",
             input_tokens=response["usage"].get("input_tokens", 0),
             output_tokens=response["usage"].get("output_tokens", 0),
             model=response.get("model"),
-            input_text=user_input[:2000],  # 只记录前 2000 字符
+            input_text=user_input[:2000],
             output_text=content[:2000],
             context_sources=context_sources,
-            route=primary_route  # 记录解析后的路由类型
+            route=primary_route
         )
 
         return result
 
-    def _enhance_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def think(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """让 LLM 思考并决定路由 - 支持路由选择
+
+        Args:
+            user_input: 用户输入
+            context: 上下文信息，包含：
+                - history: 对话历史
+                - text_contents: 文本内容（用于提取上下文来源）
+                - configs: 配置信息
+                - soul/user/skill: 配置文件内容
+                - available_routes: 可用路由列表
+
+        Returns:
+            LLM 响应结果，包含 route 和 params
+        """
+        return self.think_with_routes(user_input, context, allowed_routes=None)
+
+    def _enhance_context(self, context: Dict[str, Any], allowed_routes: List[str] = None) -> Dict[str, Any]:
         """增强上下文，添加配置文件内容和可用路由信息"""
         enhanced = context.copy()
 
@@ -605,42 +632,41 @@ class LLMClient:
         enhanced["skill"] = configs.get("skill", {})
 
         # 添加可用路由列表
-        enhanced["available_routes"] = self._get_default_routes()
+        enhanced["available_routes"] = self._get_default_routes(allowed_routes)
 
         return enhanced
 
-    def _get_default_routes(self) -> List[Dict]:
-        """获取默认路由列表"""
-        return [
-            {
-                "name": "response",
-                "description": "直接回复用户",
-                "params": {"message": "str"},
-                "example": '{"route": "response", "params": {"message": "你好！"}}'
-            },
+    def _get_default_routes(self, allowed_routes: List[str] = None) -> List[Dict]:
+        """获取默认路由列表
+
+        Args:
+            allowed_routes: 允许的路由列表，如果为 None 则返回全部路由
+        """
+        # 核心路由
+        core_routes = [
             {
                 "name": "bash",
-                "description": "执行 shell 命令",
-                "params": {"command": "str", "timeout": "int"},
+                "description": "执行 shell 命令。用于文件操作、进程管理、系统查询等。",
+                "params": {"command": "str", "timeout": "int", "cwd": "str"},
                 "example": '{"route": "bash", "params": {"command": "ls -la"}}'
             },
             {
-                "name": "batch",
-                "description": "批量执行多个命令，然后汇总结果",
-                "params": {"commands": "list"},
-                "example": '{"route": "batch", "commands": [{"route": "bash", "params": {"command": "ls -la"}}, {"route": "response", "params": {"message": "汇总结果"}}]}'
+                "name": "file_edit",
+                "description": "编辑文件。支持读取、创建、修改、插入、删除行等操作。",
+                "params": {"path": "str", "action": "str", "content": "str", "start": "int", "end": "int"},
+                "example": '{"route": "file_edit", "params": {"path": "main.py", "action": "edit", "content": "print(1)"}}'
             },
             {
-                "name": "create_user",
-                "description": "创建新 Agent",
-                "params": {"name": "str", "role_type": "str"},
-                "example": '{"route": "create_user", "params": {"name": "coder", "role_type": "worker"}}'
+                "name": "glob",
+                "description": "文件名模式匹配。用于搜索匹配特定模式的文件。",
+                "params": {"pattern": "str", "path": "str", "recursive": "bool", "max_results": "int"},
+                "example": '{"route": "glob", "params": {"pattern": "*.py", "path": "src/"}}'
             },
             {
-                "name": "memory",
-                "description": "管理记忆",
-                "params": {"action": "str", "memory_type": "str"},
-                "example": '{"route": "memory", "params": {"action": "list"}}'
+                "name": "grep",
+                "description": "文件内容搜索。用于在文件中搜索文本或正则表达式模式。",
+                "params": {"pattern": "str", "path": "str", "file_pattern": "str", "context": "int"},
+                "example": '{"route": "grep", "params": {"pattern": "TODO", "path": "src/"}}'
             },
             {
                 "name": "chat",
@@ -649,12 +675,23 @@ class LLMClient:
                 "example": '{"route": "chat", "params": {"agent_id": "coder", "message": "帮我写代码"}}'
             },
             {
-                "name": "heart",
-                "description": "自省/进化",
-                "params": {"trigger": "str", "focus": "str"},
-                "example": '{"route": "heart", "params": {"trigger": "manual"}}'
+                "name": "create_user",
+                "description": "创建新 Agent",
+                "params": {"name": "str", "role_type": "str"},
+                "example": '{"route": "create_user", "params": {"name": "coder", "role_type": "worker"}}'
+            },
+            {
+                "name": "create_team",
+                "description": "创建 Agent 团队",
+                "params": {"name": "str", "members": "list"},
+                "example": '{"route": "create_team", "params": {"name": "dev-team"}}'
             },
         ]
+
+        if allowed_routes:
+            # 过滤只保留允许的路由
+            return [r for r in core_routes if r["name"] in allowed_routes]
+        return core_routes
 
     def _extract_context_sources(self, context: Dict[str, Any]) -> List[str]:
         """从上下文中提取上下文来源地址列表
@@ -689,8 +726,13 @@ class LLMClient:
 
         return sources
 
-    def _build_system_prompt_for_routing(self, context: Dict[str, Any]) -> str:
-        """构建系统提示用于路由选择和内容生成 - 精简版，突出核心能力"""
+    def _build_system_prompt_for_routing(self, context: Dict[str, Any], workspace_info: str = None) -> str:
+        """构建系统提示用于路由选择和内容生成 - 精简增强版
+
+        Args:
+            context: 上下文信息
+            workspace_info: 工作区信息（可选）
+        """
         soul = context.get("soul", {})
         user = context.get("user", {})
         skills = context.get("skills", [])
@@ -700,95 +742,101 @@ class LLMClient:
 
         skill_names = [s.get("name", "") for s in skills if s.get("enabled", False)]
 
+        # 构建工作区部分
+        workspace_section = ""
+        if workspace_info:
+            workspace_section = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 📁 当前工作区
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{workspace_info}
+
+**重要**: 你就运行在这个项目中，可以直接访问和修改这些文件！
+"""
+
         return f"""你是 {role}，运行在用户**本地电脑**上的 AI 助手。人格：{personality}。技能：{", ".join(skill_names) if skill_names else "对话、执行命令"}。
+{workspace_section}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 🚀 核心能力 - 直接行动！
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### 1️⃣ 执行命令
+```
+# bash <命令>
+示例：# bash ls -la
+```
+
+### 2️⃣ 编辑文件
+```
+# file_edit path:<路径> content:<内容>
+```
+
+### 3️⃣ 团队协作
+```
+# chat agent_id:<id> message:<内容>
+示例：# chat agent_id:coder message:帮我写代码
+```
+
+### 4️⃣ 使用技能
+```
+# skill skill_id:<ID> 参数：值
+```
+
+### 5️⃣ 写入记忆
+```
+# memory action:write content:{{...}}
+```
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 核心能力
+## 🎯 自主执行模式（重要！）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-### 1️⃣ 使用 Skill - 解决复杂问题
-**遇到自己解决不了的事，先看看有没有 Skill 可用！**
-```
-# skill skill_id:<技能 ID> 参数 1:值 1 参数 2:值 2
-```
-示例：
-- `# skill skill_id:project_explorer path:./src`
-- `# skill skill_id:code_analyzer file:main.py`
+**当遇到复杂任务时（完善/改进/分析/实现等），你必须：**
 
-### 2️⃣ 团队合作 - 主动分发任务
-复杂任务分发给其他 Agent（coder、reviewer、writer 等）：
 ```
-# chat agent_id:coder message:分析代码结构
-# chat agent_id:reviewer message:审查代码质量
+1. 理解意图 → 用户到底想要什么？
+2. 检索记忆 → 之前做过类似任务吗？
+3. 规划任务 → 分解成具体步骤
+4. 执行循环 → 观察→决策→行动→反思
+5. 总结报告 → 告诉用户完成结果
 ```
 
-### 3️⃣ 自我更新 Memory - 主动记录
-**每次重要对话/任务完成后，自动更新记忆：**
-```
-# memory action:write memory_type:short_term content:{{"type": "task", "task": "任务名", "result": "结果"}}
-```
+**你可以一次返回多个命令，系统会自动按顺序执行：**
 
-### 4️⃣ 文档交接 - 任务留痕
-分发任务给其他 Agent 时，系统**自动创建交接文档**（你不需要手动操作）。
-
-### 5️⃣ 自我进化 - 定期自省
-每完成 3-5 个任务后：
-```
-# heart
-```
-
-### 6️⃣ 单次输出多次路由 - Batch 执行
-**复杂任务一次性返回多个命令：**
 ```
 # bash ls -la
-# bash cat README.md
-# response 汇总报告...
+# bash find . -name "*.py"
+# skill skill_id:project_explorer path:.
+# chat agent_id:coder message:帮我分析这些文件
+# response 已完成项目分析...
 ```
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 路由格式（使用 # 开头，不要用 JSON）
+## 📋 路由格式速查
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 | 路由 | 格式 | 示例 |
 |------|------|------|
 | bash | `# bash <命令>` | `# bash ls -la` |
-| skill | `# skill skill_id:<ID> 参数:值` | `# skill skill_id:explorer path:.` |
+| file_edit | `# file_edit path:<路径> ...` | `# file_edit path:main.py` |
+| skill | `# skill skill_id:<ID> 参数：值` | `# skill skill_id:explorer path:.` |
 | chat | `# chat agent_id:<id> message:<内容>` | `# chat agent_id:coder message:hi` |
 | response | `# response <回复内容>` | `# response 你好！` |
-| memory | `# memory action:<动作> content:<内容>` | `# memory action:write content:{...}` |
+| memory | `# memory action:<动作> ...` | `# memory action:write content:{{}}` |
 | heart | `# heart` | `# heart` |
-| file_edit | `# file_edit path:<路径> start:<行> end:<行> content:<新内容>` | `# file_edit path:main.py start:10 end:20 content:...` |
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 行为准则
+## ✅ 行为准则
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+✅ **直接行动** - 用户说"分析项目"，立即执行多个命令
 ✅ **遇到难题先找 Skill** - 自己解决不了时，检查可用技能
 ✅ **主动更新 Memory** - 每次任务后记录关键信息
-✅ **直接行动** - 用户说"分析项目"，立即执行多个命令
 ✅ **主动协作** - 复杂任务分发给团队 Agent
 ✅ **定期自省** - 完成任务后调用 `# heart`
 
 ❌ **禁止说**："我无法访问文件"、"我是云端 AI"
 ❌ **禁止做**：只返回单个命令当用户需要复杂分析时
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 示例：用户说"分析这个项目"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-**正确做法**：
-```
-# bash ls -la
-# bash find . -name "*.py" -type f | head -20
-# skill skill_id:project_explorer path:.
-# memory action:write content:{{"type": "exploration", "project": "mul-agent"}}
-# response 已完成项目分析...
-```
-
-**错误做法**：
-```
-# response 请你先执行 ls -la，然后告诉我结果...
-```
 
 ---
 用用户语言回答。**复杂任务必须一次性返回多个 # 命令！**
@@ -908,10 +956,41 @@ class LLMClient:
             return {"route": "batch", "commands": commands}
 
         # 3. 默认返回 response
+        # 如果 content 为空，使用用户输入作为 fallback
+        if not content.strip():
+            # 尝试从用户输入中提取项目/文件信息
+            import re
+            # 匹配可能的项目名（中英文、路径等）
+            project_patterns = [
+                r'([a-zA-Z0-9_-]+-crawler)',  # xxx-crawler 格式
+                r'([a-zA-Z0-9_-]+-spider)',   # xxx-spider 格式
+                r'([a-zA-Z0-9_]+项目)',        # xxx 项目
+                r'/(Users/[^/]+/PycharmProjects/[^/\s]+)',  # 完整路径
+            ]
+            mentioned = []
+            for pattern in project_patterns:
+                matches = re.findall(pattern, user_input)
+                mentioned.extend(matches)
+
+            if mentioned:
+                message = f"我注意到您提到了「{mentioned[0]}」。让我先查看一下项目结构，然后帮您完善它。"
+                # 返回 bash 命令来探索项目
+                return {
+                    "route": "bash",
+                    "params": {
+                        "command": f"find /Users/agent/PycharmProjects -type d -name '*{mentioned[0].replace('项目', '')}*' 2>/dev/null | head -5"
+                    }
+                }
+            else:
+                message = f"我收到了您的请求：{user_input[:100]}。请告诉我更多信息，比如项目路径或具体想完善哪部分？"
+
+        else:
+            message = content.strip()
+
         return {
             "route": "response",
             "params": {
-                "message": content.strip()
+                "message": message
             }
         }
 

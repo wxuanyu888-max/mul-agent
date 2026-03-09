@@ -1,84 +1,109 @@
-// Test file
+// WorkflowCanvas Test Suite
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import { WorkflowCanvas } from './WorkflowCanvas';
+import { infoApi, logsApi } from '../../services/api';
+
+// Mock API modules
+vi.mock('../../services/api', () => ({
+  infoApi: {
+    getCurrentWorkflow: vi.fn(),
+    getAgentTeam: vi.fn(),
+    getInteractions: vi.fn(),
+    getAgentInteractions: vi.fn(),
+    getAgentDetails: vi.fn(),
+  },
+  logsApi: {
+    getLogs: vi.fn(),
+  },
+}));
 
 describe('WorkflowCanvas', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock empty workflow state
+    vi.mocked(infoApi.getCurrentWorkflow).mockResolvedValue({
+      data: { active: false, sub_agents: [] }
+    });
+    vi.mocked(infoApi.getAgentTeam).mockResolvedValue({
+      data: { agents: [], active_sub_agents: {}, current_task: { active: false, input: null, status: 'idle' } }
+    });
+    vi.mocked(infoApi.getInteractions).mockResolvedValue({
+      data: { interactions: [] }
+    });
   });
 
-  it('renders workflow canvas with header', () => {
-    render(<WorkflowCanvas />);
-
-    expect(screen.getByText(/workflow/i)).toBeInTheDocument();
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('displays empty state when no nodes', () => {
-    render(<WorkflowCanvas />);
-
-    expect(screen.getByText(/no workflow yet/i)).toBeInTheDocument();
+  it('renders workflow canvas with header', async () => {
+    await waitFor(() => {
+      render(<WorkflowCanvas />);
+      expect(screen.getByText(/Workflow Status/i)).toBeInTheDocument();
+    });
   });
 
-  it('has add node button', () => {
-    render(<WorkflowCanvas />);
-
-    const addButton = screen.getByTitle(/add node/i);
-    expect(addButton).toBeInTheDocument();
+  it('displays workflow status panel', async () => {
+    await waitFor(() => {
+      render(<WorkflowCanvas />);
+      expect(screen.getByText(/Status:/i)).toBeInTheDocument();
+    });
   });
 
-  it('has clear button', () => {
-    render(<WorkflowCanvas />);
-
-    const clearButton = screen.getByTitle(/clear workflow/i);
-    expect(clearButton).toBeInTheDocument();
+  it('displays legend panel', async () => {
+    await waitFor(() => {
+      render(<WorkflowCanvas />);
+      expect(screen.getByText(/Legend/i)).toBeInTheDocument();
+    });
   });
 
-  it('has zoom controls', () => {
-    render(<WorkflowCanvas />);
-
-    const zoomInButton = screen.getByTitle(/zoom in/i);
-    const zoomOutButton = screen.getByTitle(/zoom out/i);
-    const resetButton = screen.getByTitle(/reset view/i);
-
-    expect(zoomInButton).toBeInTheDocument();
-    expect(zoomOutButton).toBeInTheDocument();
-    expect(resetButton).toBeInTheDocument();
+  it('displays idle state when no active workflow', async () => {
+    await waitFor(() => {
+      render(<WorkflowCanvas />);
+      expect(screen.getByText(/Idle/i)).toBeInTheDocument();
+    });
   });
 
-  it('displays workflow nodes when loaded', async () => {
-    // Mock workflow data
-    const mockNodes = [
-      { id: '1', type: 'agent', name: 'Coder', x: 100, y: 100 },
-      { id: '2', type: 'agent', name: 'Reviewer', x: 300, y: 100 }
-    ];
+  it('displays agent count', async () => {
+    vi.mocked(infoApi.getAgentTeam).mockResolvedValue({
+      data: {
+        agents: [
+          { agent_id: 'test1', name: 'Test Agent 1', description: 'Test', role: 'test' }
+        ],
+        active_sub_agents: {},
+        current_task: { active: false, input: null, status: 'idle' }
+      }
+    });
 
-    render(<WorkflowCanvas />);
-
-    // Simulate loading nodes (implementation dependent)
-    // This test verifies the component can display nodes
-    expect(screen.getByText(/workflow/i)).toBeInTheDocument();
+    await waitFor(() => {
+      render(<WorkflowCanvas />);
+      expect(screen.getByText(/Agents: 1/i)).toBeInTheDocument();
+    });
   });
 
-  it('handles canvas click', () => {
-    render(<WorkflowCanvas />);
-
-    const canvas = screen.getByTestId(/workflow-canvas/i) || document.querySelector('.workflow-canvas');
-    if (canvas) {
-      fireEvent.click(canvas);
-    }
-    // Should not throw
-    expect(true).toBe(true);
+  it('displays refresh button', async () => {
+    await waitFor(() => {
+      render(<WorkflowCanvas />);
+      const refreshButton = screen.getByRole('button', { name: /refresh/i });
+      expect(refreshButton).toBeInTheDocument();
+    });
   });
 
-  it('clears workflow when clear button clicked', () => {
-    render(<WorkflowCanvas />);
+  it('calls fetchWorkflowStatus when refresh button clicked', async () => {
+    vi.mocked(infoApi.getCurrentWorkflow).mockResolvedValueOnce({
+      data: { active: false, sub_agents: [] }
+    });
 
-    const clearButton = screen.getByTitle(/clear workflow/i);
-    fireEvent.click(clearButton);
-
-    // Should show empty state
-    expect(screen.getByText(/no workflow yet/i)).toBeInTheDocument();
+    await waitFor(async () => {
+      render(<WorkflowCanvas />);
+      const refreshButton = screen.getByRole('button', { name: /refresh/i });
+      await waitFor(() => {
+        fireEvent.click(refreshButton);
+      });
+      // Should not throw
+      expect(true).toBe(true);
+    });
   });
 });

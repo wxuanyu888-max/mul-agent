@@ -115,10 +115,10 @@ export interface LLMCallLog {
   function: string;
   input_tokens: number;
   output_tokens: number;
-  input_text?: string;      // 输入文本（完整）
-  output_text?: string;     // 输出文本（完整）
-  context_sources?: string[];  // 上下文来源地址列表（加载文件列表）
-  tool_calls?: ToolCall[];  // 工具调用列表
+  input_text?: string; // 输入文本（完整）
+  output_text?: string; // 输出文本（完整）
+  context_sources?: string[]; // 上下文来源地址列表（加载文件列表）
+  tool_calls?: ToolCall[]; // 工具调用列表
   // 兼容旧格式
   extra?: {
     input?: string;
@@ -134,7 +134,7 @@ export interface TokenUsageDetails {
     by_function: Record<string, FunctionTokenStats>;
     by_date: Record<string, DateTokenStats>;
   };
-  llm_logs: LLMCallLog[];  // LLM 调用日志（在根级别）
+  llm_logs: LLMCallLog[]; // LLM 调用日志（在根级别）
 }
 
 export interface AllAgentsTokenUsage {
@@ -149,7 +149,7 @@ export interface Integration {
   provider: string;
   model?: string;
   icon?: string;
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
   has_key: boolean;
   created_at?: string;
   updated_at?: string;
@@ -166,7 +166,7 @@ export interface IntegrationFormData {
 
 // Chat Message Types
 export interface Message {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: number;
 }
@@ -175,4 +175,23 @@ export interface ApiMessage {
   role: string;
   content: string;
   timestamp?: string;
+}
+
+// Agent Interaction Types
+export interface Interaction {
+  run_id: string;
+  source: string;
+  target: string;
+  type: string;
+  task: string;
+  status: string;
+  timestamp: number;
+  datetime?: string;
+}
+
+export interface InteractionHistoryModalProps {
+  source: string;
+  target: string;
+  edgeId?: string;
+  onClose: () => void;
 }

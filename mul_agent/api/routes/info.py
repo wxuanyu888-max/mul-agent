@@ -254,11 +254,229 @@ async def get_loaded_docs(agent_id: str):
     }
 
 
-@router.get("/info/interactions")
-async def get_interactions(limit: int = 50, project_id: Optional[str] = None):
-    """Get agent interactions from logs and agent team structure"""
+@router.post("/info/files/batch")
+async def get_files_content(request_data: dict):
+    """Get content of multiple files
+
+    Args:
+        request_data: {"file_paths": [...]}
+
+    Returns:
+        Dict mapping file paths to their contents
+    """
+    from pathlib import Path
+
+    file_paths = request_data.get("file_paths", [])
+    base_dir = Path(__file__).parent.parent.parent.parent
+    files_content = {}
+
+    for file_path in file_paths:
+        try:
+            # 构建完整路径
+            full_path = Path(file_path)
+            if not full_path.is_absolute():
+                full_path = base_dir / file_path
+
+            # 安全检查：确保文件在 base_dir 内
+            try:
+                full_path.resolve().relative_to(base_dir.resolve())
+            except ValueError:
+                files_content[file_path] = {
+                    "error": "Access denied: file outside project directory",
+                    "content": None
+                }
+                continue
+
+            if full_path.exists():
+                content = full_path.read_text(encoding="utf-8")
+                files_content[file_path] = {
+                    "content": content,
+                    "size": full_path.stat().st_size,
+                    "exists": True
+                }
+            else:
+                files_content[file_path] = {
+                    "error": "File not found",
+                    "content": None,
+                    "exists": False
+                }
+        except Exception as e:
+            files_content[file_path] = {
+                "error": str(e),
+                "content": None
+            }
+
+    return {"files": files_content}
+
+
+# 全局交互缓存（LRU Cache，TTL 30 秒）
+from functools import lru_cache
+import time
+
+_interaction_cache: dict = {}
+_cache_timestamp: float = 0
+_CACHE_TTL = 30  # 缓存有效期（秒）
+
+
+def _get_interactions_from_logs(log_base_dir: Path, time_window: int = 300, source_filter: Optional[str] = None, target_filter: Optional[str] = None) -> list:
+    """从日志文件中提取交互数据"""
     import json
     from datetime import datetime
+
+    interactions = []
+    current_time = datetime.now()
+    cutoff_time = current_time.timestamp() - time_window
+
+    # 收集所有日志文件并按修改时间排序（最新的在前）
+    log_files = []
+    for agent_dir in log_base_dir.iterdir():
+        if not agent_dir.is_dir():
+            continue
+        for session_dir in agent_dir.iterdir():
+            if not session_dir.is_dir():
+                continue
+            for log_file in session_dir.glob("*.jsonl"):
+                try:
+                    mtime = log_file.stat().st_mtime
+                    log_files.append((mtime, log_file))
+                except Exception:
+                    pass
+
+    # 按修改时间排序，优先处理最新的文件
+    log_files.sort(key=lambda x: x[0], reverse=True)
+
+    # 处理日志文件（限制数量，避免性能问题）
+    checked_files = 0
+    for _, log_file in log_files:
+        if checked_files >= 20:  # 增加扫描范围到 20 个文件
+            break
+
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            log_entry = json.loads(line.strip())
+                        except json.JSONDecodeError:
+                            continue
+
+                        # 提取 SubAgent 交互
+                        if log_entry.get("source") == "SubAgent":
+                            details = log_entry.get("details", {})
+                            run_id = log_entry.get("run_id", log_entry.get("trace_id", ""))
+                            timestamp_str = log_entry.get("datetime", "")
+
+                            try:
+                                dt = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                                timestamp = int(dt.timestamp())
+                            except Exception:
+                                timestamp = 0
+
+                            # 时间窗口过滤
+                            if timestamp < cutoff_time:
+                                continue
+
+                            source = "wang"
+                            target = details.get("sub_agent_id", "unknown")
+
+                            # 过滤器检查
+                            if source_filter and source != source_filter:
+                                continue
+                            if target_filter and target != target_filter:
+                                continue
+
+                            interaction = {
+                                "run_id": run_id,
+                                "source": source,
+                                "target": target,
+                                "type": details.get("sub_agent_type", "chat"),
+                                "task": log_entry.get("message", "")[:200],
+                                "status": "executing",
+                                "timestamp": timestamp,
+                                "datetime": timestamp_str
+                            }
+
+                            # 避免重复
+                            if not any(i["run_id"] == run_id for i in interactions):
+                                interactions.append(interaction)
+
+                        # 提取 Router 决策
+                        elif log_entry.get("source") == "Router":
+                            details = log_entry.get("details", {})
+                            route = details.get("route", "")
+                            run_id = log_entry.get("run_id", log_entry.get("trace_id", ""))
+                            timestamp_str = log_entry.get("datetime", "")
+
+                            try:
+                                dt = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                                timestamp = int(dt.timestamp())
+                            except Exception:
+                                timestamp = 0
+
+                            # 时间窗口过滤
+                            if timestamp < cutoff_time:
+                                continue
+
+                            source = "wang"
+                            target = route
+
+                            # 过滤器检查
+                            if source_filter and source != source_filter:
+                                continue
+                            if target_filter and target != target_filter:
+                                continue
+
+                            interaction = {
+                                "run_id": run_id,
+                                "source": source,
+                                "target": target,
+                                "type": "delegation",
+                                "task": details.get("params", {}).get("command", log_entry.get("message", ""))[:200],
+                                "status": "pending",
+                                "timestamp": timestamp,
+                                "datetime": timestamp_str
+                            }
+
+                            # 避免重复
+                            if not any(i["run_id"] == run_id for i in interactions):
+                                interactions.append(interaction)
+        except Exception:
+            pass  # Skip files that can't be read
+
+        checked_files += 1
+
+    return interactions
+
+
+@router.get("/info/interactions")
+async def get_interactions(
+    limit: int = 50,
+    project_id: Optional[str] = None,
+    time_window: int = 300  # 默认 5 分钟（秒）
+):
+    """Get agent interactions from logs and agent team structure
+
+    Args:
+        limit: 最大返回数量
+        project_id: 项目 ID（暂未使用）
+        time_window: 时间窗口（秒），默认 300 秒（5 分钟）
+    """
+    import json
+    from datetime import datetime
+
+    global _interaction_cache, _cache_timestamp
+
+    # 检查缓存是否有效
+    current_cache_time = time.time()
+    use_cache = (current_cache_time - _cache_timestamp) < _CACHE_TTL
+
+    if use_cache and _interaction_cache:
+        # 使用缓存数据，但需要重新应用时间窗口过滤
+        cached_interactions = _interaction_cache.get("all", [])
+        cutoff_time = datetime.now().timestamp() - time_window
+        filtered = [i for i in cached_interactions if i.get("timestamp", 0) >= cutoff_time]
+        filtered.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+        return {"interactions": filtered[:limit]}
 
     # 日志存储在 storage/conversations 目录下，按 agent 和日期组织
     log_base_dir = Path(__file__).parent.parent.parent.parent / "storage" / "conversations"
@@ -274,6 +492,7 @@ async def get_interactions(limit: int = 50, project_id: Optional[str] = None):
 
         # 为每个 agent 创建与 core_brain 的协作关系
         current_time = datetime.now()
+        cutoff_time = current_time.timestamp() - time_window
         for agent_id in agents_in_team:
             if agent_id in ['core_brain', '.templates']:
                 continue
@@ -284,92 +503,76 @@ async def get_interactions(limit: int = 50, project_id: Optional[str] = None):
                 "type": "collaboration",
                 "task": "Team collaboration",
                 "status": "active",
-                "timestamp": int(current_time.timestamp())
+                "timestamp": int(current_time.timestamp()),
+                "datetime": current_time.strftime("%Y-%m-%d %H:%M:%S")
             })
 
     # 2. 从日志中提取实际的任务委派交互
-    if not log_base_dir.exists():
-        interactions.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-        return {"interactions": interactions[:limit]}
+    if log_base_dir.exists():
+        log_interactions = _get_interactions_from_logs(log_base_dir, time_window=time_window)
+        for interaction in log_interactions:
+            if not any(i["run_id"] == interaction["run_id"] for i in interactions):
+                interactions.append(interaction)
 
-    # 使用简单的文件遍历，避免复杂的嵌套循环
-    checked_files = 0
-    for agent_dir in log_base_dir.iterdir():
-        if checked_files >= 10:
-            break
-        if not agent_dir.is_dir():
-            continue
+    # 更新缓存
+    _interaction_cache["all"] = interactions.copy()
+    _cache_timestamp = time.time()
 
-        for session_dir in agent_dir.iterdir():
-            if checked_files >= 10:
-                break
-            if not session_dir.is_dir():
-                continue
+    # 按时间戳排序（最新的在前）并限制数量
+    interactions.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+    return {"interactions": interactions[:limit]}
 
-            for log_file in session_dir.glob("*.jsonl"):
-                if checked_files >= 10:
-                    break
 
-                try:
-                    with open(log_file, "r", encoding="utf-8") as f:
-                        for line in f:
-                            if line.strip():
-                                log_entry = json.loads(line.strip())
+@router.get("/info/interactions/{source}/{target}")
+async def get_agent_interactions(
+    source: str,
+    target: str,
+    time_window: int = 300,  # 默认 5 分钟
+    limit: int = 50
+):
+    """Get interactions between two specific agents
 
-                                # 提取 SubAgent 交互
-                                if log_entry.get("source") == "SubAgent":
-                                    details = log_entry.get("details", {})
-                                    run_id = log_entry.get("run_id", log_entry.get("trace_id", ""))
-                                    timestamp_str = log_entry.get("datetime", "")
+    Args:
+        source: 发起方 agent ID
+        target: 接收方 agent ID
+        time_window: 时间窗口（秒），默认 300 秒（5 分钟）
+        limit: 最大返回数量
 
-                                    try:
-                                        dt = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                                        timestamp = int(dt.timestamp())
-                                    except Exception:
-                                        timestamp = 0
+    Returns:
+        这两个 agent 之间指定时间窗口内的所有交互
+    """
+    import json
+    from datetime import datetime
 
-                                    interaction = {
-                                        "run_id": run_id,
-                                        "source": "wang",
-                                        "target": details.get("sub_agent_id", "unknown"),
-                                        "type": details.get("sub_agent_type", "chat"),
-                                        "task": log_entry.get("message", "")[:200],
-                                        "status": "executing",
-                                        "timestamp": timestamp
-                                    }
+    log_base_dir = Path(__file__).parent.parent.parent.parent / "storage" / "conversations"
+    interactions = []
 
-                                    if interaction not in interactions:
-                                        interactions.append(interaction)
+    # 1. 检查是否是团队协作关系
+    if source == "core_brain" or target == "core_brain":
+        current_time = datetime.now()
+        cutoff_time = current_time.timestamp() - time_window
+        interactions.append({
+            "run_id": f"collab-{source if source != 'core_brain' else target}",
+            "source": source,
+            "target": target,
+            "type": "collaboration",
+            "task": "Team collaboration",
+            "status": "active",
+            "timestamp": int(current_time.timestamp()),
+            "datetime": current_time.strftime("%Y-%m-%d %H:%M:%S")
+        })
 
-                                # 提取 Router 决策
-                                elif log_entry.get("source") == "Router":
-                                    details = log_entry.get("details", {})
-                                    route = details.get("route", "")
-                                    run_id = log_entry.get("run_id", log_entry.get("trace_id", ""))
-                                    timestamp_str = log_entry.get("datetime", "")
-
-                                    try:
-                                        dt = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                                        timestamp = int(dt.timestamp())
-                                    except Exception:
-                                        timestamp = 0
-
-                                    interaction = {
-                                        "run_id": run_id,
-                                        "source": "wang",
-                                        "target": route,
-                                        "type": "delegation",
-                                        "task": details.get("params", {}).get("command", log_entry.get("message", ""))[:200],
-                                        "status": "pending",
-                                        "timestamp": timestamp
-                                    }
-
-                                    if interaction not in interactions:
-                                        interactions.append(interaction)
-                except Exception:
-                    pass  # Skip files that can't be read
-
-                checked_files += 1
+    # 2. 从日志中提取特定 agent 对的交互
+    if log_base_dir.exists():
+        log_interactions = _get_interactions_from_logs(
+            log_base_dir,
+            time_window=time_window,
+            source_filter=source,
+            target_filter=target
+        )
+        for interaction in log_interactions:
+            if not any(i["run_id"] == interaction["run_id"] for i in interactions):
+                interactions.append(interaction)
 
     # 按时间戳排序（最新的在前）并限制数量
     interactions.sort(key=lambda x: x.get("timestamp", 0), reverse=True)

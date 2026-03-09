@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { tokenUsageApi } from '../../services/api';
+import { tokenUsageApi, infoApi } from '../../services/api';
 import type { TokenUsageDetails, AllAgentsTokenUsage, LLMCallLog, TokenUsageSummary, ToolCall } from '../../types';
 
 interface TokenUsagePanelProps {
@@ -33,6 +33,9 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
   const [error, setError] = useState<string | null>(null);
   const [expandedLogIds, setExpandedLogIds] = useState<Set<string>>(new Set());
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // 存储已加载的文件内容
+  const [loadedFilesContent, setLoadedFilesContent] = useState<Record<string, { content: string; size?: number; error?: string }>>({});
+  const [loadingFiles, setLoadingFiles] = useState(false);
 
   // 分页状态 - 表 1（Agent 统计）
   const [table1Page, setTable1Page] = useState(1);
@@ -72,7 +75,7 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
         agents.map(async (agentId) => {
           try {
             const agentResponse = await tokenUsageApi.get(agentId);
-            const logs = agentResponse.data.llm_logs || [];
+            const logs = agentResponse?.data?.llm_logs || [];
             logs.forEach((log: LLMCallLog) => {
               allLogsData.push({
                 agent_id: agentId,
@@ -82,6 +85,7 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
             });
           } catch (err) {
             console.error(`Failed to load logs for ${agentId}:`, err);
+            // Continue loading other agents' logs even if one fails
           }
         })
       );
@@ -141,8 +145,36 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
       newExpanded.delete(rowKey);
     } else {
       newExpanded.add(rowKey);
+      // 展开时加载文件内容
+      const log = allLogs.find((log, idx) => `${log.agent_id}-${log.timestamp}-${idx}` === rowKey);
+      if (log && log.context_sources && log.context_sources.length > 0) {
+        loadFilesContent(log.context_sources);
+      }
     }
     setExpandedLogIds(newExpanded);
+  };
+
+  // 加载文件内容
+  const loadFilesContent = async (filePaths: string[]) => {
+    setLoadingFiles(true);
+    try {
+      // 过滤出未加载的文件
+      const unloadedFiles = filePaths.filter(path => !loadedFilesContent[path]);
+      if (unloadedFiles.length === 0) {
+        setLoadingFiles(false);
+        return;
+      }
+
+      const response = await infoApi.getFilesBatch(unloadedFiles);
+      setLoadedFilesContent(prev => ({
+        ...prev,
+        ...response.data.files
+      }));
+    } catch (err) {
+      console.error('Failed to load files content:', err);
+    } finally {
+      setLoadingFiles(false);
+    }
   };
 
   const formatNumber = (num: number): string => {
@@ -428,7 +460,7 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
                             <div>
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase">
-                                  📥 输入文本（加载内容）
+                                  📥 输入文本
                                 </span>
                               </div>
                               <pre className="bg-white dark:bg-gray-800 rounded p-3 text-xs text-gray-700 dark:text-gray-300 overflow-x-auto whitespace-pre-wrap break-words border border-gray-200 dark:border-gray-700">
@@ -448,19 +480,63 @@ const TokenUsagePanel: React.FC<TokenUsagePanelProps> = ({ agentId }) => {
                               </pre>
                             </div>
 
-                            {/* 加载文件列表 */}
+                            {/* 加载文件内容（完整显示） */}
                             {getContextSources(log).length > 0 && (
                               <div>
                                 <div className="flex items-center gap-2 mb-2">
                                   <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase">
-                                    📁 加载文件列表（上下文来源）
+                                    📁 加载的文件内容（上下文来源）
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    （共 {getContextSources(log).length} 个文件）
                                   </span>
                                 </div>
-                                <ul className="list-disc list-inside text-xs text-gray-700 dark:text-gray-300 space-y-1 bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700">
-                                  {getContextSources(log).map((src, idx) => (
-                                    <li key={idx}>{src}</li>
-                                  ))}
-                                </ul>
+                                <div className="space-y-3">
+                                  {getContextSources(log).map((filePath, idx) => {
+                                    const fileData = loadedFilesContent[filePath];
+                                    return (
+                                      <div key={idx} className="bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                        {/* 文件头：显示路径和大小 */}
+                                        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                                          <span className="text-xs font-mono text-gray-600 dark:text-gray-400 truncate max-w-md">
+                                            {filePath}
+                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            {fileData?.error && (
+                                              <span className="text-xs text-red-500">{fileData.error}</span>
+                                            )}
+                                            {fileData?.size && (
+                                              <span className="text-xs text-gray-400">
+                                                {(fileData.size / 1024).toFixed(1)} KB
+                                              </span>
+                                            )}
+                                            {!fileData && loadingFiles && (
+                                              <span className="text-xs text-gray-400 animate-pulse">加载中...</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        {/* 文件内容 */}
+                                        <div className="max-h-64 overflow-y-auto">
+                                          {fileData?.content ? (
+                                            <pre className="w-full p-3 text-xs text-gray-700 dark:text-gray-300 overflow-x-auto whitespace-pre-wrap break-words font-mono">
+                                              {fileData.content.length > 5000
+                                                ? fileData.content.slice(0, 5000) + '\n\n... (文件内容过长，仅显示前 5000 字符)'
+                                                : fileData.content}
+                                            </pre>
+                                          ) : fileData?.error ? (
+                                            <div className="p-4 text-sm text-red-500">
+                                              无法加载文件：{fileData.error}
+                                            </div>
+                                          ) : (
+                                            <div className="p-4 text-sm text-gray-400 animate-pulse">
+                                              正在加载文件内容...
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
 

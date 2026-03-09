@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { infoApi, logsApi } from '../../services/api';
 import { ProjectSwitcher } from '../project/ProjectSwitcher';
+import type { Interaction, InteractionHistoryModalProps } from '../../types';
 
 // Apple 风格节点颜色
 const nodeColors = {
@@ -169,7 +170,8 @@ const CustomEdgeComponent = memo(function CustomEdge({
   style = {},
   data,
   markerEnd,
-}: EdgeProps<CustomEdge>) {
+  onClick,
+}: EdgeProps<CustomEdge> & { onClick?: () => void }) {
   const [edgePath] = getBezierPath({
     sourceX,
     sourceY,
@@ -179,7 +181,11 @@ const CustomEdgeComponent = memo(function CustomEdge({
     targetPosition,
   });
 
-  const edgeData = data as unknown as { label?: string; type?: string };
+  const edgeData = data as unknown as { label?: string; type?: string; status?: string; source?: string; target?: string };
+
+  // 获取 source 和 target（从 edge data 或 style 中获取）
+  const source = edgeData?.source || '';
+  const target = edgeData?.target || '';
 
   // 根据交互类型设置颜色
   const strokeColors: Record<string, string> = {
@@ -188,10 +194,18 @@ const CustomEdgeComponent = memo(function CustomEdge({
     create_user: '#34c759',
     memory: '#ff2d55',
     heart: '#0071e3',
+    collaboration: '#a855f7',
+    delegation: '#0071e3',
     default: '#d2d2d7',
   };
 
   const strokeColor = edgeData?.type ? (strokeColors[edgeData.type] || strokeColors.default) : strokeColors.default;
+
+  // 判断是否是活跃交互（executing 状态）
+  const isActive = edgeData?.status === 'executing' || edgeData?.status === 'active';
+
+  // 脉冲动画样式
+  const pulseAnimation = isActive ? 'pulse 1.5s ease-in-out infinite' : 'none';
 
   return (
     <>
@@ -199,33 +213,37 @@ const CustomEdgeComponent = memo(function CustomEdge({
         id={id}
         style={{
           ...style,
-          strokeWidth: 2,
+          strokeWidth: style.strokeWidth || 2,
           stroke: strokeColor,
           fill: 'none',
-          strokeDasharray: edgeData?.type ? '5,5' : 'none',
-          animation: edgeData?.type ? 'dashAnimation 1s linear infinite' : 'none',
+          strokeDasharray: edgeData?.type && edgeData.type !== 'collaboration' ? '5,5' : 'none',
+          animation: edgeData?.type ? pulseAnimation : 'none',
+          cursor: onClick ? 'pointer' : 'default',
         }}
         d={edgePath}
         markerEnd={markerEnd}
+        onClick={onClick}
       />
       {edgeData?.label && (
-        <g>
+        <g onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
           <rect
-            x={(sourceX + targetX) / 2 - 20}
-            y={(sourceY + targetY) / 2 - 10}
-            width={40}
-            height={20}
+            x={(sourceX + targetX) / 2 - 35}
+            y={(sourceY + targetY) / 2 - 12}
+            width={70}
+            height={24}
             fill="white"
-            rx={4}
+            rx={6}
+            stroke={strokeColor}
+            strokeWidth={1}
           />
           <text
             x={(sourceX + targetX) / 2}
             y={(sourceY + targetY) / 2 + 4}
             style={{
-              fontSize: '9px',
+              fontSize: '10px',
               fill: strokeColor,
               textAnchor: 'middle',
-              fontWeight: 500,
+              fontWeight: 600,
             }}
           >
             {edgeData.label}
@@ -824,6 +842,9 @@ export function WorkflowCanvas() {
               label: 'collaboration',
               type: 'collaboration',
               task: 'Team collaboration',
+              source: 'core_brain',
+              target: agent.agent_id,
+              status: 'active',
             },
             style: {
               stroke: '#a855f7',
@@ -869,6 +890,9 @@ export function WorkflowCanvas() {
                 label: interaction.type,
                 type: interaction.type,
                 task: interaction.task,
+                source: interaction.source,
+                target: interaction.target,
+                status: interaction.status,
               },
               style: {
                 stroke: interaction.status === 'executing' ? '#22c55e' : '#6b7280',
@@ -886,17 +910,43 @@ export function WorkflowCanvas() {
 
   // 定时获取工作流状态 - 只获取一次，避免无限循环
   useEffect(() => {
-    fetchWorkflowStatus();
-    const interval = setInterval(fetchWorkflowStatus, 3000); // 每 3 秒刷新一次
-    return () => clearInterval(interval);
+    let mounted = true;
+
+    const fetchStatus = async () => {
+      if (!mounted) return;
+      await fetchWorkflowStatus();
+    };
+
+    fetchStatus();
+    const interval = setInterval(() => {
+      if (mounted) fetchWorkflowStatus();
+    }, 3000); // 每 3 秒刷新一次
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 获取交互数据
   useEffect(() => {
-    fetchInteractions();
-    const interval = setInterval(fetchInteractions, 5000); // 每 5 秒刷新一次交互数据
-    return () => clearInterval(interval);
+    let mounted = true;
+
+    const fetchInteractionsData = async () => {
+      if (!mounted) return;
+      await fetchInteractions();
+    };
+
+    fetchInteractionsData();
+    const interval = setInterval(() => {
+      if (mounted) fetchInteractions();
+    }, 5000); // 每 5 秒刷新一次交互数据
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -920,6 +970,29 @@ export function WorkflowCanvas() {
     }
   }, []);
 
+  // 交互历史弹窗相关状态
+  const [selectedInteraction, setSelectedInteraction] = useState<{ source: string; target: string } | null>(null);
+  const [interactionHistory, setInteractionHistory] = useState<Interaction[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // 处理边点击 - 显示交互历史
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: CustomEdge) => {
+    const source = edge.data?.source as string || '';
+    const target = edge.data?.target as string || '';
+    if (source && target) {
+      setSelectedInteraction({ source, target });
+      setLoadingHistory(true);
+      // 获取这两个 agent 之间的交互历史（5 分钟内）
+      infoApi.getAgentInteractions(source, target, 300, 50).then((res) => {
+        setInteractionHistory(res.data.interactions || []);
+        setLoadingHistory(false);
+      }).catch(() => {
+        setInteractionHistory([]);
+        setLoadingHistory(false);
+      });
+    }
+  }, []);
+
   // Performance optimized ReactFlow config
   const flowOptions = useMemo(() => ({
     nodeOrigin: [0.5, 0] as [number, number],
@@ -938,7 +1011,8 @@ export function WorkflowCanvas() {
     zoomOnDoubleClick: false,
     preventScrolling: true,
     onNodeClick,
-  }), [onNodeClick]);
+    onEdgeClick,
+  }), [onNodeClick, onEdgeClick]);
 
   return (
     <div className="w-full h-full bg-gray-50 relative overflow-hidden">
@@ -1093,6 +1167,15 @@ export function WorkflowCanvas() {
         />
       )}
 
+      {/* Interaction History Modal */}
+      {selectedInteraction && (
+        <InteractionHistoryModal
+          source={selectedInteraction.source}
+          target={selectedInteraction.target}
+          onClose={() => setSelectedInteraction(null)}
+        />
+      )}
+
       {/* Add CSS animation for edge */}
       <style>{`
         @keyframes dashAnimation {
@@ -1100,7 +1183,138 @@ export function WorkflowCanvas() {
             stroke-dashoffset: -10;
           }
         }
+
+        @keyframes pulse {
+          0%, 100% {
+            stroke-opacity: 1;
+            stroke-width: 3;
+          }
+          50% {
+            stroke-opacity: 0.5;
+            stroke-width: 2;
+          }
+        }
       `}</style>
+    </div>
+  );
+}
+
+
+// Interaction History Modal Component
+function InteractionHistoryModal({ source, target, onClose }: InteractionHistoryModalProps) {
+  const [interactions, setInteractions] = useState<Interaction[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    // Get interactions between source and target (5 minutes window)
+    infoApi.getAgentInteractions(source, target, 300, 50).then((res) => {
+      setInteractions(res.data.interactions || []);
+      setLoading(false);
+    }).catch(() => {
+      setInteractions([]);
+      setLoading(false);
+    });
+  }, [source, target]);
+
+  // Format timestamp to readable time
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleTimeString();
+  };
+
+  // Get type icon
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'bash': return Terminal;
+      case 'chat': return MessageSquare;
+      case 'memory': return Database;
+      case 'heart': return Heart;
+      case 'delegation': return Zap;
+      case 'collaboration': return Bot;
+      default: return Bot;
+    }
+  };
+
+  // Get status color
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'executing': return 'bg-green-100 text-green-700';
+      case 'active': return 'bg-green-100 text-green-700';
+      case 'pending': return 'bg-amber-100 text-amber-700';
+      case 'completed': return 'bg-blue-100 text-blue-700';
+      default: return 'bg-gray-100 text-gray-600';
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center">
+              <Activity className="w-5 h-5 text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Interaction History</h2>
+              <p className="text-sm text-gray-500">{source} → {target}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
+            </div>
+          ) : interactions.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No interactions found in the last 5 minutes</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {interactions.map((interaction, index) => {
+                const TypeIcon = getTypeIcon(interaction.type);
+                return (
+                  <div
+                    key={index}
+                    className="p-3 rounded-lg border border-gray-200 hover:border-purple-300 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <TypeIcon className="w-4 h-4 text-gray-400" />
+                      <span className="text-xs font-medium text-gray-500 capitalize">{interaction.type}</span>
+                      <span className="text-xs text-gray-400 ml-auto">{formatTime(interaction.timestamp)}</span>
+                    </div>
+                    <p className="text-sm text-gray-700 truncate">{interaction.task || 'No task description'}</p>
+                    <div className="mt-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(interaction.status)}`}>
+                        {interaction.status}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>Showing last 5 minutes</span>
+            <span>{interactions.length} interaction(s)</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

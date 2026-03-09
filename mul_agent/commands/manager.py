@@ -57,6 +57,35 @@ class CommandManager:
             "mul_agent.commands.builtin.HookCommand",
             "mul_agent.commands.builtin.MemoryCommand",
             "mul_agent.commands.builtin.BashCommand",
+            "mul_agent.commands.builtin.PermissionCommand",
+            # Claude Code 风格命令
+            "mul_agent.commands.builtin.TddCommand",
+            "mul_agent.commands.builtin.CodeReviewCommand",
+            "mul_agent.commands.builtin.BuildFixCommand",
+            "mul_agent.commands.builtin.VerifyCommand",
+            "mul_agent.commands.builtin.TestCoverageCommand",
+            "mul_agent.commands.builtin.SecurityScanCommand",
+            "mul_agent.commands.builtin.PlanCommand",
+            "mul_agent.commands.builtin.E2eCommand",
+            # 对话管理命令
+            "mul_agent.commands.dialog.HistoryCommand",
+            "mul_agent.commands.dialog.UndoCommand",
+            "mul_agent.commands.dialog.SummaryCommand",
+            "mul_agent.commands.dialog.ClearCommand",
+            "mul_agent.commands.dialog.ResumeCommand",
+            "mul_agent.commands.dialog.ContextCommand",
+            "mul_agent.commands.dialog.TokenCommand",
+            # MCP 命令
+            "mul_agent.commands.builtin.MCPCommand",
+            # 学习命令
+            "mul_agent.commands.builtin.LearnCommand",
+            # 代码搜索命令
+            "mul_agent.commands.builtin.SearchCommand",
+            "mul_agent.commands.builtin.CodeIndexCommand",
+            # 可观测性命令
+            "mul_agent.commands.builtin.ObserveCommand",
+            # 检查点命令
+            "mul_agent.commands.builtin.CheckpointCommand",
         ]
 
         for command_path in builtin_commands:

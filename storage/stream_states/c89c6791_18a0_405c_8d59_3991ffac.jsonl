@@ -1,0 +1,1 @@
+{"type": "input_received", "timestamp": 1772971507.9348311, "agent_id": "test_agent", "session_id": "c89c6791-18a0-405c-8d59-3991ffacff1e", "data": {"test": "hello"}, "sequence": 0}

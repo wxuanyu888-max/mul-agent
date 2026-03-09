@@ -5,10 +5,17 @@ Refactored architecture:
 - Handlers: Route handlers (in handlers/ directory)
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Optional
+import re
 import uuid
 import time
+import json
 import httpx
+from pathlib import Path
+
+from mul_agent.brain.workspace import get_current_workspace, Workspace
+from mul_agent.brain.stream import stream_manager, StreamEventType
+from mul_agent.mcp.client import get_mcp_client
 
 
 class BrainState:
@@ -53,6 +60,8 @@ from mul_agent.brain.context_builder import ContextBuilder
 from mul_agent.brain.conversation import ConversationManager
 from mul_agent.brain.compressor import ContextCompressor
 from mul_agent.brain.memory_decision import MemoryDecisionSystem
+from mul_agent.brain.autonomous_loop import AutonomousLoop
+from mul_agent.brain.subagent import SubagentManager
 from mul_agent.memory.memory import Memory
 from mul_agent.network.agent_network import AgentNetwork
 from mul_agent.repositories import AgentRepository, TeamRepository
@@ -62,6 +71,12 @@ from mul_agent.skills.manager import SkillManager
 from mul_agent.hooks.manager import HookManager
 from mul_agent.commands.manager import CommandManager
 from mul_agent.hooks.base import HookEvent
+
+# 会话状态持久化
+from mul_agent.brain.session_state import session_state_manager, SessionStateManager
+
+# 核心指挥官模块 - 用于团队任务委派
+from mul_agent.brain.commander import get_commander, Commander
 
 
 class Brain:
@@ -111,6 +126,21 @@ class Brain:
         self.hook_manager = HookManager(config_manager, agent_id)
         self.command_manager = CommandManager(config_manager, agent_id)
 
+        # Initialize MCP client
+        self.mcp_client = get_mcp_client()
+
+        # Initialize state management (before observability which needs session_id)
+        self.state = BrainState(agent_id=agent_id)
+        self.context = self.state.context  # Backward compatibility
+
+        # Initialize skill evolution system
+        from mul_agent.skills.evolution import get_skill_evolution_system
+        self.skill_evolution = get_skill_evolution_system()
+
+        # Initialize observability platform
+        from mul_agent.observability.platform import get_observability_platform
+        self.observability = get_observability_platform(agent_id, self.state.get_session_id())
+
         # Initialize context components
         self.context_builder = ContextBuilder(
             config_manager,
@@ -123,20 +153,27 @@ class Brain:
             max_tokens=8000
         )
 
-        # Initialize state management
-        self.state = BrainState(agent_id=agent_id)
-        self.context = self.state.context  # Backward compatibility
-
         # Initialize Agent network
         self.network = AgentNetwork()
         self._register_to_network()
+
+        # Initialize subagent manager
+        self.subagent = SubagentManager(self)
+
+        # Initialize workspace awareness
+        self.workspace = get_current_workspace()
+
+        # Initialize Commander for team delegation (only for core_brain)
+        self.commander: Optional[Commander] = None
+        if agent_id == "core_brain" and self.use_llm:
+            self.commander = get_commander(self, self.llm)
 
         # State tracking for UI
         self._current_route = None
         self._start_time = None
 
     def _update_state(self, status: str, action: str = None, details: dict = None):
-        """Update agent state to API endpoint"""
+        """Update agent state to API endpoint and write to file for streaming"""
         try:
             import asyncio
             import httpx
@@ -151,10 +188,56 @@ class Brain:
                 "details": details
             }
 
+            # Write state to file for streaming API to read
+            try:
+                from pathlib import Path
+                state_dir = Path("storage/agent_states")
+                state_dir.mkdir(parents=True, exist_ok=True)
+                state_file = state_dir / f"{self.agent_id}.json"
+                import json
+                with open(state_file, 'w') as f:
+                    json.dump(state_data, f, indent=2)
+            except Exception:
+                pass  # Don't let file write fail the main operation
+
+            # Emit stream event for real-time updates
+            try:
+                stream_manager.emit(
+                    event=self._status_to_stream_event(status),
+                    agent_id=self.agent_id,
+                    session_id=self.state.get_session_id(),
+                    data=state_data
+                )
+            except Exception:
+                pass  # Don't let stream event fail the main operation
+
             # Fire and forget - don't block execution
-            asyncio.create_task(self._send_state_update(state_data))
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._send_state_update(state_data))
+                else:
+                    loop.run_until_complete(self._send_state_update(state_data))
+            except Exception:
+                pass  # Don't let state update fail the main operation
         except Exception:
             pass  # Don't let state update fail the main operation
+
+    def _status_to_stream_event(self, status: str) -> StreamEventType:
+        """Convert status string to StreamEventType"""
+        mapping = {
+            "received": StreamEventType.INPUT_RECEIVED,
+            "planning": StreamEventType.PLANNING,
+            "deciding": StreamEventType.THOUGHT,
+            "thinking": StreamEventType.THOUGHT,
+            "executing": StreamEventType.EXECUTION_START,
+            "iteration": StreamEventType.EXECUTION_PROGRESS,
+            "completed": StreamEventType.COMPLETE,
+            "error": StreamEventType.EXECUTION_ERROR,
+            "autonomous_mode": StreamEventType.PLANNING,
+            "autonomous_start": StreamEventType.SESSION_START,
+        }
+        return mapping.get(status, StreamEventType.EXECUTION_PROGRESS)
 
     async def _send_state_update(self, state_data: dict):
         """Send state update to API endpoint asynchronously"""
@@ -205,7 +288,13 @@ class Brain:
         return capabilities
 
     def think(self, user_input: str) -> Dict[str, Any]:
-        """思考并决定下一步行动"""
+        """思考并决定下一步行动 - 仿照 Claude Code 的持续执行模式
+
+        Claude Code 核心设计：
+        1. 直接行动 - 不等待用户确认
+        2. 持续执行 - 直到任务完成
+        3. 透明执行 - 每一步都告诉用户在做什么
+        """
         self._start_time = time.time()
 
         # 触发 SessionStart 钩子（如果是第一次调用）
@@ -233,6 +322,33 @@ class Brain:
                 "data": command_result.to_dict()
             }
 
+        # ==================== Commander 模式：核心大脑委派团队（仅 core_brain） ====================
+        # 当用户向 core_brain 提出复杂任务时，自动委派给 alice/bob/wangyue
+        if self.agent_id == "core_brain" and self.commander and self._is_team_delegation_task(user_input):
+            self._update_state("commander_mode", "分析任务并委派团队...")
+            return self.commander.analyze_and_delegate(user_input)
+
+        # 检测是否是复杂任务，如果是则使用自主模式
+        if self._is_complex_task(user_input):
+            self._update_state("autonomous_mode", "启动自主执行模式")
+            return self._run_autonomous_task(user_input)
+
+        # ==================== 计划模式：先输出计划，用户确认后再执行 ====================
+        # 检测是否需要先看计划（通过关键词或配置）
+        if self._needs_plan(user_input):
+            self._update_state("planning", "分析任务并生成计划...")
+            plan_result = self._plan_task(user_input, context={})
+            # 返回计划让用户确认
+            return {
+                "status": "plan_ready",
+                "route": "plan",
+                "data": plan_result
+            }
+
+        # ==================== Claude Code 模式：持续执行循环 ====================
+        # 核心改进：不只是一步，而是持续执行直到任务完成
+        self._update_state("planning", "规划并执行任务")
+
         # Add to history
         self.state.add_to_history("user", user_input)
 
@@ -252,116 +368,146 @@ class Brain:
         if self.should_compress_context(compression_context):
             self._compress_history()
 
-        # Build context
-        context = self.context_builder.build_context(
-            agent_id=self.agent_id,
-            user_input=user_input,
-            options={
-                "include_text_content": True,
-                "include_memory": True,
-                "memory_limit": 5,
-                "include_team": False,
-                "include_history": True,
-                "history": self.state.get_history()
-            }
-        )
+        # 执行循环 - 最多 5 次迭代，避免无限循环
+        max_iterations = 5
+        iteration = 0
+        all_results = []
+        task_complete = False
 
-        # 先使用规则路由（更可靠、更快速）
-        action = self._decide_action(user_input)
-        self._current_route = action.get("route")
+        while not task_complete and iteration < max_iterations:
+            iteration += 1
+            self._update_state("iteration", f"执行迭代 {iteration}/{max_iterations}")
 
-        # Update state: deciding
-        self._update_state("deciding", f"路由：{action.get('route')}", {"route": action.get("route")})
-
-        # 如果路由是 uncertain，让 LLM 分析并决定路由
-        if action.get("route") == "uncertain":
-            self._update_state("thinking", "LLM 分析并决定路由...")
-            if self.use_llm:
-                llm_result = self.llm.think(user_input, context)
-                # 使用 LLM 选择的路由和参数
-                # 支持两种格式：
-                # 1. {"route": "bash", "params": {...}} - 标准格式
-                # 2. {"route": "batch", "commands": [...]} - batch 格式（commands 在根级别）
-                action = {
-                    "route": llm_result.get("route", "response"),
-                    "params": llm_result.get("params", {})
+            # Build context (每轮迭代重新构建，包含上一轮结果)
+            context = self.context_builder.build_context(
+                agent_id=self.agent_id,
+                user_input=user_input,
+                options={
+                    "include_text_content": True,
+                    "include_memory": True,
+                    "memory_limit": 5,
+                    "include_team": False,
+                    "include_history": True,
+                    "history": self.state.get_history(),
+                    "previous_results": all_results  # 添加上一轮结果
                 }
-                # 如果是 batch 路由，需要保留 commands
-                if action["route"] == "batch" and "commands" in llm_result:
-                    action["params"]["commands"] = llm_result["commands"]
+            )
+
+            # ==================== 改进的决策逻辑：LLM 优先 ====================
+            # Claude Code 模式：让 LLM 主导决策，而非规则路由
+            self._update_state("thinking", "LLM 分析并规划下一步...")
+
+            # 第一轮：先用 LLM 分析意图（而非规则路由）
+            if iteration == 1 and self.use_llm:
+                action = self._llm_decide_action(user_input, context)
             else:
-                # Fallback 到简化响应
-                action = self._decide_action_fallback(user_input)
+                # 后续迭代或 LLM 不可用时，使用规则路由 + LLM 修正
+                action = self._decide_action(user_input)
 
-        # Execute action
-        self._update_state("executing", f"执行：{action.get('route')}", {"params": action.get("params")})
+            self._current_route = action.get("route")
 
-        # 触发 PreToolUse 钩子
-        pre_tool_data = self.hook_manager.trigger_pre_tool_use(
-            action.get("route", "response"),
-            action.get("params", {})
-        )
-        if pre_tool_data.get("blocked"):
-            # 被钩子阻止
-            return {
-                "route": "response",
-                "params": {"message": pre_tool_data.get("error", "Action blocked")},
-                "blocked": True
-            }
+            # Update state: deciding
+            self._update_state("deciding", f"路由：{action.get('route')}", {"route": action.get("route")})
 
-        result = self.router.dispatch(
-            action.get("route", "response"),
-            pre_tool_data.get("params", action.get("params", {}))
-        )
-
-        # 记录路由执行情况到 Token Usage Center
-        self._record_route_execution(
-            route=action.get("route", "response"),
-            params=action.get("params", {}),
-            result=result,
-            user_input=user_input
-        )
-
-        # 如果是 batch 路由，执行完成后让 LLM 汇总结果
-        if action.get("route") == "batch" and result.get("status") == "success":
-            self._update_state("thinking", "汇总批量执行结果...")
-            batch_results = result.get("data", {}).get("batch_results", [])
-            # 构建汇总上下文
-            summary_context = "以下是执行的结果：\n\n"
-            for i, r in enumerate(batch_results, 1):
-                cmd_route = r.get("route")
-                cmd_result = r.get("result", {})
-                if cmd_route == "bash":
-                    stdout = cmd_result.get("data", {}).get("stdout", "")
-                    summary_context += f"命令 {i} ({cmd_route}): {stdout[:500]}\n\n"
+            # 如果路由是 uncertain，让 LLM 分析并决定路由
+            if action.get("route") == "uncertain":
+                self._update_state("thinking", "规则路由不确定，LLM 决定下一步...")
+                if self.use_llm:
+                    llm_result = self._decide_next_step_with_llm(
+                        user_input=user_input,
+                        context=context,
+                        previous_results=all_results,
+                        iteration=iteration
+                    )
+                    action = llm_result
                 else:
-                    summary_context += f"命令 {i} ({cmd_route}): {str(cmd_result.get('data', cmd_result))[:500]}\n\n"
+                    # Fallback 到 file_edit
+                    action = {"route": "file_edit", "params": {"description": user_input}}
 
-            # 让 LLM 汇总结果生成报告
-            if self.use_llm:
-                summary_prompt = f"""用户请求：{user_input}
-
-{summary_context}
-
-请根据以上执行结果，为用户生成一份完整的报告或回答。"""
-                llm_summary = self.llm.think(summary_prompt, context)
-                # 返回 LLM 汇总的结果
+            # 检查是否任务已完成（LLM 判断）
+            if action.get("route") == "task_complete":
+                task_complete = True
                 result = {
                     "status": "success",
                     "route": "response",
+                    "data": {"message": action.get("params", {}).get("message", "任务已完成")}
+                }
+                all_results.append(result)
+                break
+
+            # Execute action
+            self._update_state("executing", f"执行：{action.get('route')}", {"params": action.get("params")})
+
+            # 触发 PreToolUse 钩子（包括权限检查）
+            pre_tool_data = self.hook_manager.trigger_pre_tool_use(
+                action.get("route", "response"),
+                action.get("params", {})
+            )
+
+            # 检查是否需要权限确认
+            if pre_tool_data.get("requires_confirmation"):
+                # 返回权限请求，等待用户确认
+                permission_request = pre_tool_data.get("permission_request", {})
+                return {
+                    "route": "permission_request",
+                    "status": "waiting_confirmation",
                     "data": {
-                        "message": llm_summary.get("params", {}).get("message", llm_summary.get("content", ""))
+                        "permission_request": permission_request,
+                        "message": pre_tool_data.get("message", "请确认是否继续执行此操作"),
+                        "action": action,
                     }
                 }
 
-        # 触发 PostToolUse 钩子
-        post_tool_data = self.hook_manager.trigger_post_tool_use(
-            action.get("route", "response"),
-            action.get("params", {}),
-            result
-        )
-        if post_tool_data.get("result"):
-            result = post_tool_data["result"]
+            if pre_tool_data.get("blocked"):
+                result = {
+                    "route": "response",
+                    "params": {"message": pre_tool_data.get("error", "Action blocked")},
+                    "blocked": True
+                }
+                all_results.append(result)
+                continue
+
+            result = self.router.dispatch(
+                action.get("route", "response"),
+                pre_tool_data.get("params", action.get("params", {}))
+            )
+
+            # 记录路由执行情况到 Token Usage Center
+            self._record_route_execution(
+                route=action.get("route", "response"),
+                params=action.get("params", {}),
+                result=result,
+                user_input=user_input
+            )
+
+            all_results.append(result)
+
+            # 触发 PostToolUse 钩子
+            post_tool_data = self.hook_manager.trigger_post_tool_use(
+                action.get("route", "response"),
+                action.get("params", {}),
+                result
+            )
+            if post_tool_data.get("result"):
+                result = post_tool_data["result"]
+
+            # 让 LLM 判断任务是否完成
+            if self.use_llm and iteration >= 1:
+                completion_check = self._check_task_completion(
+                    user_input=user_input,
+                    results=all_results,
+                    iteration=iteration
+                )
+                if completion_check.get("task_complete"):
+                    task_complete = True
+                    # 生成最终报告
+                    final_result = self._generate_final_report(user_input, all_results)
+                    result = final_result
+                    break
+
+        # 使用最后一轮的结果
+        if all_results:
+            result = all_results[-1]
 
         # Save to memory - using autonomous decision system
         memory_decision = self.memory_decision.should_remember(
@@ -396,13 +542,308 @@ class Brain:
 
         return result
 
+    def _decide_next_step_with_llm(
+        self,
+        user_input: str,
+        context: Dict[str, Any],
+        previous_results: List[Dict[str, Any]],
+        iteration: int
+    ) -> Dict[str, Any]:
+        """让 LLM 基于当前状态决定下一步做什么
+
+        这是 Claude Code 的核心：观察结果 → 决定下一步 → 执行
+        """
+        # 构建执行历史
+        history_summary = ""
+        for i, r in enumerate(previous_results[-3:], 1):  # 只看最近 3 轮
+            route = r.get("route", "unknown")
+            status = r.get("status", "unknown")
+            history_summary += f"步骤 {i}: {route} - {status}\n"
+
+        # 获取工作区信息
+        workspace_prompt = self.workspace.get_context_prompt()
+
+        prompt = f"""用户原始请求：{user_input[:300]}
+
+**工作区信息**:
+{workspace_prompt}
+
+**已执行步骤**:
+{history_summary}
+
+**当前是第 {iteration} 次迭代**。
+
+请决定下一步做什么：
+1. 如果任务已完成，返回：{{"route": "task_complete", "params": {{"message": "完成说明"}}}}
+2. 如果需要继续，选择下一个最合适的路由（bash/file_edit/glob/grep/chat/response 等）
+3. 解释为什么选择这个步骤
+
+以 JSON 格式返回：
+```json
+{{
+    "route": "路由名称",
+    "params": {{"参数名": "参数值"}},
+    "reason": "选择这个步骤的原因"
+}}
+```
+"""
+        try:
+            llm_result = self.llm.think(prompt, context)
+            content = llm_result.get("content", "")
+
+            # 解析 JSON
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                return json.loads(json_match.group())
+        except Exception as e:
+            print(f"[LLM 决策下一步] 错误：{e}")
+
+        # Fallback
+        return {"route": "response", "params": {"message": "任务执行中..."}}
+
+    def _check_task_completion(
+        self,
+        user_input: str,
+        results: List[Dict[str, Any]],
+        iteration: int
+    ) -> Dict[str, Any]:
+        """检查任务是否完成"""
+        if not self.use_llm:
+            return {"task_complete": False}
+
+        # 构建执行摘要
+        exec_summary = ""
+        for i, r in enumerate(results, 1):
+            route = r.get("route", "unknown")
+            status = r.get("status", "unknown")
+            exec_summary += f"{i}. {route}: {status}\n"
+
+        prompt = f"""用户请求：{user_input[:300]}
+
+已执行 {iteration} 步：
+{exec_summary}
+
+请判断：
+1. 用户的原始请求是否已经满足？
+2. 是否需要继续执行更多步骤？
+3. 如果完成，生成一份简短的完成报告
+
+以 JSON 格式返回：
+```json
+{{
+    "task_complete": true/false,
+    "reason": "判断原因",
+    "final_report": "如果完成的总结报告"
+}}
+```
+"""
+        try:
+            llm_result = self.llm.chat(prompt)
+            content = llm_result.get("content", "")
+
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                return json.loads(json_match.group())
+        except Exception as e:
+            print(f"[检查完成] 错误：{e}")
+
+        return {"task_complete": False}
+
+    def _llm_decide_action(
+        self,
+        user_input: str,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """让 LLM 分析用户意图并决定初始行动
+
+        这是 Claude Code 的核心：直接让 LLM 理解用户要什么，然后选择最合适的工具
+        """
+        # 获取工作区信息
+        workspace_prompt = self.workspace.get_context_prompt()
+
+        prompt = f"""用户请求：{user_input[:500]}
+
+**工作区信息**:
+{workspace_prompt}
+
+**可用工具**:
+- bash: 执行 shell 命令（如 ls, cd, find, grep 等）
+- file_edit: 编辑或创建文件
+- glob: 查找文件（支持通配符）
+- grep: 搜索文件内容
+- chat: 与其他 Agent 对话
+- response: 直接回复（当不需要工具时）
+
+请分析用户意图，选择最合适的工具：
+1. 如果用户想要执行命令 → 选择 bash
+2. 如果用户想要修改/创建文件 → 选择 file_edit
+3. 如果用户想要查找文件 → 选择 glob
+4. 如果用户想要搜索内容 → 选择 grep
+5. 如果用户想要与其他 Agent 对话 → 选择 chat
+6. 如果只是想询问或对话 → 选择 response
+
+以 JSON 格式返回：
+```json
+{{
+    "route": "工具名称",
+    "params": {{}},
+    "reason": "选择这个工具的原因",
+    "plan": "如果需要多步执行，列出后续计划"
+}}
+```
+"""
+        try:
+            llm_result = self.llm.think(prompt, context)
+            content = llm_result.get("content", "")
+
+            # 解析 JSON
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                result = json.loads(json_match.group())
+                # 记录 LLM 的思考和计划
+                if result.get("reason"):
+                    self._update_state("planning", result["reason"])
+                return result
+        except Exception as e:
+            print(f"[LLM 决策初始行动] 错误：{e}")
+
+        # Fallback 到规则路由
+        return self._decide_action(user_input)
+
+    def _generate_final_report(
+        self,
+        user_input: str,
+        results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """生成最终任务完成报告"""
+        if not self.use_llm:
+            return {
+                "status": "success",
+                "route": "response",
+                "data": {"message": "任务已完成"}
+            }
+
+        # 构建执行历史
+        history = []
+        for r in results:
+            route = r.get("route")
+            status = r.get("status")
+            history.append(f"- {route}: {status}")
+
+        prompt = f"""用户请求：{user_input[:300]}
+
+执行历史：
+{chr(10).join(history)}
+
+请生成一份简洁的任务完成报告：
+1. 做了什么
+2. 结果如何
+3. 后续建议（如果有）
+
+用 Markdown 格式，200 字以内。
+"""
+        try:
+            llm_result = self.llm.chat(prompt)
+            content = llm_result.get("content", "")
+
+            return {
+                "status": "success",
+                "route": "response",
+                "data": {"message": content}
+            }
+        except Exception:
+            return {
+                "status": "success",
+                "route": "response",
+                "data": {"message": "任务已完成"}
+            }
+
     def cleanup(self):
-        """清理资源，触发 SessionEnd 钩子"""
+        """清理资源，触发 SessionEnd 钩子并保存会话状态"""
         if hasattr(self, '_session_started') and self._session_started:
             self.hook_manager.trigger_session_end({
                 "session_id": self.state.get_session_id(),
                 "history_length": len(self.state.get_history())
             })
+
+        # 保存会话状态
+        self._save_session_state()
+
+    def _save_session_state(self):
+        """保存当前会话状态"""
+        try:
+            session_id = self.state.get_session_id()
+            history = self.state.get_history()[-50:]  # 只保留最近 50 条
+
+            session_state_manager.update_state(
+                session_id=session_id,
+                end_time=time.time(),
+                current_task=getattr(self, '_current_task', None),
+                history=history,
+                working_directory=str(self.workspace.root) if hasattr(self, 'workspace') and self.workspace else None,
+                metadata={
+                    "last_route": self._current_route,
+                    "skills_count": len(self.skill_manager.list_skills()),
+                    "hooks_count": len(self.hook_manager.list_hooks())
+                }
+            )
+        except Exception as e:
+            print(f"Save session state error: {e}")
+
+    def load_previous_session(self) -> Optional[Dict[str, Any]]:
+        """加载上一个会话的状态
+
+        Returns:
+            Dict: 上一个会话的状态，如果不存在则返回 None
+        """
+        try:
+            session_id = self.state.get_session_id()
+            state = session_state_manager.load_state(session_id)
+
+            if state:
+                # 恢复历史
+                history = state.get("history", [])
+                if history:
+                    self.state.context["history"] = history
+
+                # 恢复工作目录
+                working_dir = state.get("working_directory")
+                if working_dir:
+                    try:
+                        import os
+                        os.chdir(working_dir)
+                    except Exception:
+                        pass
+
+            return state
+        except Exception as e:
+            print(f"Load previous session error: {e}")
+            return None
+
+    def list_sessions(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """列出最近的会话
+
+        Args:
+            limit: 限制数量
+
+        Returns:
+            List[Dict]: 会话列表
+        """
+        return session_state_manager.list_sessions(limit)
+
+    def delete_session(self, session_id: str) -> bool:
+        """删除会话
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            bool: 是否删除成功
+        """
+        return session_state_manager.delete_session(session_id)
 
     def _record_route_execution(
         self,
@@ -543,33 +984,24 @@ class Brain:
         return default
 
     def _decide_action(self, user_input: str) -> Dict[str, Any]:
-        """基于规则的意图识别 - 优先使用规则路由，更可靠快速
+        """基于规则的意图识别 - 核心路由
 
-        意图识别优先级:
-        1. 空输入 -> 直接响应
-        2. 命令模式（/开头）-> 已经在 think 方法中处理
-        3. bash 命令模式 -> 执行命令
-        4. 问候语 -> LLM 生成友好响应
-        5. 帮助请求 -> 帮助菜单
-        6. 创建 Agent -> 创建流程
-        7. 记忆相关 -> 记忆管理
-        8. 自省/进化 -> 自省流程
-        9. Skill 执行 -> 执行技能
-        10. 对话相关（与其他 Agent 对话）-> chat
-        11. 其他 -> LLM 生成响应内容
+        核心路由:
+        1. bash - 执行 shell 命令
+        2. file_edit - 文件编辑
+        3. glob - 文件名模式匹配
+        4. grep - 文件内容搜索
+        5. chat - 与其他 Agent 对话
+        6. create - 创建 Agent 或团队
+
+        其他情况交给 LLM 通过 uncertain 路由决定
         """
         import re
 
         input_lower = user_input.lower() if user_input else ""
         input_stripped = user_input.strip() if user_input else ""
 
-        # 1. 空输入
-        if not input_lower:
-            response = self._load_response_prompt("empty_input_style", "我在听。")
-            return {"route": "response", "params": {"message": response}}
-
-        # 2. Bash 命令模式 - 检测命令前缀或特殊字符
-        # 只有明确的命令格式才匹配，避免误判
+        # 1. Bash 命令模式 - 检测命令前缀或特殊字符
         bash_explicit_patterns = [
             r'^\$ ',      # $ 开头
             r'^\$',       # $ 开头无空格
@@ -577,11 +1009,9 @@ class Brain:
             r'^sh ',      # sh 开头
             r'^sudo ',    # sudo 开头
         ]
-        # 英文命令关键词（后面跟具体命令）
-        bash_cmd_patterns = ["ls ", "cd ", "pwd", "cat ", "grep ", "find ", "echo ", "rm ", "cp ", "mv ", "mkdir ", "head ", "tail ", "wc "]
+        bash_cmd_patterns = ["ls ", "cd ", "pwd", "cat ", "find ", "echo ", "rm ", "cp ", "mv ", "mkdir ", "head ", "tail ", "wc "]
 
         is_bash = False
-        command = input_stripped
 
         # 检查明确的前缀模式
         for pattern in bash_explicit_patterns:
@@ -589,91 +1019,108 @@ class Brain:
                 is_bash = True
                 break
 
-        # 检查是否以常见命令开头（包含命令后跟空格或参数）
         if not is_bash:
             for cmd in bash_cmd_patterns:
                 if input_lower.startswith(cmd):
                     is_bash = True
                     break
 
-        # 检查纯命令格式（简短的英数组合，可能是命令）
         if not is_bash:
-            # 纯命令格式：字母 + 空格 + 参数，不超过 5 个词
             if re.match(r'^[a-z]+\s+.*$', input_stripped) and len(input_stripped.split()) <= 5:
-                # 第一个词是常见命令
                 first_word = input_stripped.split()[0].lower()
-                common_commands = ["ls", "cd", "pwd", "cat", "grep", "find", "head", "tail", "wc", "echo", "mkdir", "rm", "cp", "mv"]
+                common_commands = ["ls", "cd", "pwd", "cat", "find", "head", "tail", "wc", "echo", "mkdir", "rm", "cp", "mv"]
                 if first_word in common_commands:
                     is_bash = True
 
         if is_bash:
-            # 提取命令
-            if command.startswith("$"):
-                command = command[1:].strip()
+            command = input_stripped[1:].strip() if input_stripped.startswith("$") else input_stripped
             return {"route": "bash", "params": {"command": command}}
 
-        # 3. 问候语 - 使用 LLM 生成友好响应
-        greeting_patterns = ["你好", "hello", "hi ", "早上好", "下午好", "晚上好", "再见", "bye"]
-        if any(kw in input_lower for kw in greeting_patterns):
-            # 返回 uncertain，让 LLM 生成内容
-            return {"route": "uncertain", "params": {"input": user_input}}
+        # 2. Glob - 文件名匹配 (检测 find + 模式)
+        glob_patterns = ["find", "查找文件", "搜索文件", "*.py", "*.ts", "*.js", "*.md"]
+        is_glob = any(kw in input_lower for kw in glob_patterns)
+        if is_glob and any(kw in input_lower for kw in ["pattern", "模式", "extension", "扩展名"]):
+            # 提取模式
+            pattern_match = re.search(r'\*\.\w+', user_input)
+            pattern = pattern_match.group(0) if pattern_match else "*"
+            return {"route": "glob", "params": {"pattern": pattern, "path": "."}}
 
-        # 4. 帮助请求
-        if any(kw in input_lower for kw in ["help", "?", "帮助", "怎么用", "如何使用", "what can you do"]):
-            response = self._load_response_prompt("help_menu_style", "可用命令：create, bash, memory, heart, chat")
-            return {"route": "response", "params": {"message": response}}
+        # 3. Grep - 内容搜索 (检测 grep + 文本模式，或搜索关键词)
+        grep_keywords = ["grep", "search for", "search text", "查找内容", "搜索文本", "TODO", "FIXME"]
+        is_grep = any(kw in input_lower for kw in grep_keywords)
+        if is_grep:
+            # 提取搜索模式
+            pattern_match = re.search(r'["\']([^"\']+)["\']', user_input)
+            pattern = pattern_match.group(1) if pattern_match else user_input.split()[-1]
+            return {"route": "grep", "params": {"pattern": pattern, "path": "."}}
 
-        # 5. 创建 Agent - 需要更精确的匹配，避免误判
+        # 4. 创建 Agent/团队
         create_keywords = ["create", "new ", "add ", "创建", "新建"]
-        # 检查是否包含创建关键词，并且后面跟 agent/team/助手等词
         is_create = any(kw in input_lower for kw in create_keywords)
-        has_target = any(t in input_lower for t in ["agent", "team", "助手", "bot", "robot"])
-        if is_create and has_target:
-            return {"route": "create_user", "params": {"name": user_input}}
-        # 检查是否是创建团队
-        if any(t in input_lower for t in ["team", "团队", "group", "组"]) and is_create:
-            return {"route": "create_team", "params": {"name": user_input}}
+        if is_create:
+            has_target = any(t in input_lower for t in ["agent", "team", "助手", "bot", "robot"])
+            if has_target:
+                if any(t in input_lower for t in ["team", "团队", "group", "组"]):
+                    return {"route": "create_team", "params": {"name": user_input}}
+                return {"route": "create_user", "params": {"name": user_input}}
 
-        # 6. 记忆相关
-        if any(kw in input_lower for kw in ["memory", "remember", "记住", "记忆", "forget", "忘记", "recall"]):
-            return {"route": "memory", "params": {"action": "list", "memory_type": "long_term"}}
-
-        # 7. 项目探索/分析报告（复杂任务，交给 LLM 决定使用 skill 还是 batch）
-        explore_keywords = ["探索项目", "分析项目", "explore", "analyze project", "项目结构", "扫描项目", "scan project", "list files", "查看项目", "写报告", "project report", "analysis report"]
-        if any(kw in input_lower for kw in explore_keywords):
-            # 不直接路由到 skill，而是让 LLM 决定使用 skill 还是 batch
-            return {"route": "uncertain", "params": {"input": user_input}}
-
-        # 8. 自省/进化
-        if any(kw in input_lower for kw in ["heart", "reflect", "evolve", "自省", "反思", "进化", "改进", "evolution"]):
-            return {"route": "heart", "params": {}}
-
-        # 9. Skill 执行（如："execute skill bash_executor command=ls"）
-        skill_patterns = ["execute skill", "run skill", "skill execute", "使用 skill", "调用 skill"]
-        for pattern in skill_patterns:
-            if pattern in input_lower:
-                # 解析 skill_id 和参数
-                parts = user_input.split()
-                skill_id = None
-                params = {}
-
-                for i, part in enumerate(parts):
-                    if part == "skill" and i + 1 < len(parts):
-                        skill_id = parts[i + 1]
-                    if "=" in part:
-                        key, value = part.split("=", 1)
-                        params[key] = value
-
-                if skill_id:
-                    return {"route": "skill", "params": {"skill_id": skill_id, **params}}
-
-        # 10. 对话相关（与其他 Agent 对话）
+        # 5. 与其他 Agent 对话
         chat_patterns = ["和.*对话", "跟.*说话", "find agent", "tell agent", "send message"]
         for pattern in chat_patterns:
             if re.search(pattern, input_lower):
                 return {"route": "chat", "params": {"message": user_input}}
 
-        # 11. 其他 - 让 LLM 生成响应内容
+        # 6. 文件编辑（检测文件路径或编辑关键词）
+        file_edit_patterns = ["编辑", "修改", "创建文件", "write", "edit", "update", "create file"]
+        if any(kw in input_lower for kw in file_edit_patterns):
+            # 如果提到文件，路由到 file_edit
+            if any(kw in input_lower for kw in ["文件", "file", ".py", ".ts", ".js", ".md", ".json"]):
+                return {"route": "file_edit", "params": {"description": user_input}}
+
+        # 7. 项目相关模糊请求 - 主动探索
+        # 检测是否包含项目相关关键词：完善、改进、优化、查看项目等
+        project_keywords = ["完善", "改进", "优化", "查看", "看看", "explore", "improve", "enhance"]
+        project_indicators = ["项目", "project", "代码", "code", "dir", "folder"]
+
+        has_project_keyword = any(kw in input_lower for kw in project_keywords)
+        has_project_indicator = any(ind in input_lower for ind in project_indicators)
+
+        # 检测是否提到特定项目名（crawler, spider 等）
+        project_name_patterns = [
+            r'([a-zA-Z0-9_-]+-crawler)',
+            r'([a-zA-Z0-9_-]+-spider)',
+            r'(爬虫)',
+        ]
+        mentioned_project = None
+        for pattern in project_name_patterns:
+            match = re.search(pattern, user_input, re.IGNORECASE)
+            if match:
+                mentioned_project = match.group(1)
+                break
+
+        if has_project_keyword or mentioned_project:
+            # 这是一个项目相关的模糊请求，先探索项目结构
+            # 返回 batch 命令：先查找项目，再查看结构
+            search_name = mentioned_project.replace('项目', '').replace('-', '*') if mentioned_project else '*'
+            return {
+                "route": "batch",
+                "commands": [
+                    {
+                        "route": "bash",
+                        "params": {
+                            "command": f"find /Users/agent/PycharmProjects -type d -iname '*{search_name}*' 2>/dev/null | head -5"
+                        }
+                    },
+                    {
+                        "route": "response",
+                        "params": {
+                            "message": f"我来帮您探索项目结构。以上是我找到的相关项目目录，接下来我可以帮您查看具体的代码结构或提供改进建议。"
+                        }
+                    }
+                ]
+            }
+
+        # 其他情况 - 交给 LLM 决定使用哪个路由
         return {"route": "uncertain", "params": {"input": user_input}}
 
     def _decide_action_fallback(self, user_input: str) -> Dict[str, Any]:
@@ -718,6 +1165,20 @@ class Brain:
     def list_commands(self) -> list:
         """列出所有命令"""
         return self.command_manager.list_commands()
+
+    # Skill evolution methods
+    def record_skill_evolution(self, user_input: str, route: str, params: Dict,
+                                 result: Dict, success: bool, context: Dict = None):
+        """记录技能进化"""
+        self.skill_evolution.record_execution(user_input, route, params, result, success, context)
+
+    def get_learned_skills(self) -> list:
+        """获取已学习的技能"""
+        return self.skill_evolution.list_patterns(min_confidence=0.5)
+
+    def get_skill_evolution_stats(self) -> Dict[str, Any]:
+        """获取技能进化统计"""
+        return self.skill_evolution.get_stats()
 
     def evolve(self, focus: str = "all", require_confirmation: bool = False) -> Dict[str, Any]:
         """自我进化"""
@@ -806,3 +1267,284 @@ class Brain:
         """创建新 Agent"""
         new_agent_id = config.get("agent_id", f"agent_{hash(config.get('name', ''))}")
         return {"status": "success", "agent_id": new_agent_id, "message": f"Agent {new_agent_id} created"}
+
+    # ==================== Autonomous Mode Methods ====================
+
+    def _run_autonomous_task(self, user_input: str) -> Dict[str, Any]:
+        """运行自主任务执行循环
+
+        用于复杂任务，让 Agent 自主规划、执行、反思
+        """
+        import asyncio
+
+        # 创建自主执行循环实例
+        loop = AutonomousLoop(self)
+
+        # 运行任务
+        result = asyncio.run(loop.run(user_input))
+
+        # 将结果添加到历史记录
+        self.state.add_to_history("assistant", result)
+
+        # 保存对话
+        self.conversation.save_message(
+            agent_id=self.agent_id,
+            session_id=self.state.get_session_id(),
+            role="assistant",
+            content=result
+        )
+
+        # 修剪历史记录
+        self.state.trim_history()
+
+        # 更新状态为完成
+        self._update_state("completed", "自主执行完成")
+        self._current_route = None
+
+        return result
+
+    def _is_complex_task(self, user_input: str) -> bool:
+        """检测是否是复杂任务 - 放宽条件，让更多任务使用自主模式
+
+        Claude Code 设计原则：宁可高估任务复杂度，也不要让用户一步步指引
+        """
+        # 首先使用规则快速判断（LLM 不可用时 fallback）
+        if not self.llm.is_available():
+            return self._is_complex_task_fallback(user_input)
+
+        # 1. 先检查明确命令 - 这些不需要自主模式
+        input_stripped = user_input.strip()
+        simple_patterns = [
+            r'^\$ ',           # $ 开头的命令
+            r'^ls\s',          # ls 命令
+            r'^cd\s',          # cd 命令
+            r'^pwd\s*',        # pwd 命令
+            r'^cat\s',         # cat 命令
+            r'^echo\s',        # echo 命令
+            r'^head\s',        # head 命令
+            r'^tail\s',        # tail 命令
+            r'^你好 |hello|hi\s',  # 问候
+            r'^exit|quit',     # 退出
+        ]
+        for pattern in simple_patterns:
+            if re.search(pattern, input_stripped, re.IGNORECASE):
+                return False
+
+        # 2. 宽松判断：只要不是简单命令，都使用自主模式
+        # 这样可以让更多任务进入自主执行循环
+        has_action_keyword = any(kw in user_input.lower() for kw in [
+            '完善', '改进', '优化', '实现', '开发', '构建',
+            '分析', '探索', '重构', '设计', '创建', '搭建',
+            '修复', '调试', '添加', '查看', '看看',
+            'improve', 'enhance', 'implement', 'develop', 'build',
+            'analyze', 'explore', 'refactor', 'design', 'create', 'setup',
+            'fix', 'debug', 'add', 'check', 'view',
+        ])
+
+        # 3. 使用 LLM 辅助判断（当没有明确关键词时）
+        if not has_action_keyword:
+            prompt = f"""判断用户输入是否需要多步骤执行：
+
+用户输入：{user_input[:200]}
+
+简单任务：单一命令（ls/cd 等）、问候、简单问答
+复杂任务：需要先探索再行动、涉及多个文件/步骤、模糊的改进需求
+
+返回 true/false"""
+            try:
+                result = self.llm.chat(prompt)
+                content = result.get("content", "").lower()
+                if "true" in content:
+                    return True
+            except Exception:
+                pass
+
+        # 默认：有关键词或是项目相关请求，都使用自主模式
+        return has_action_keyword
+
+    def _needs_plan(self, user_input: str) -> bool:
+        """判断是否需要先输出计划
+
+        触发条件：
+        1. 用户明确要求先看计划（"先看计划"、"plan first"等）
+        2. 超复杂任务（涉及多个文件/系统的大改动）
+        3. 配置启用计划模式
+        """
+        # 检查明确请求
+        plan_keywords = ['先看计划', '生成计划', '展示计划', 'plan first', 'show plan', '先规划']
+        if any(kw in user_input.lower() for kw in plan_keywords):
+            return True
+
+        # 检查配置
+        config = self.config_manager.load(self.agent_id, 'user')
+        if config.get('plan_mode', False):
+            return True
+
+        # 超复杂任务判断：涉及多个系统/架构的改动
+        complex_keywords = ['架构', '重构整个', '重写', 'migration', 'refactor all', 'rewrite']
+        return any(kw in user_input.lower() for kw in complex_keywords)
+
+    def _plan_task(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """生成任务执行计划
+
+        使用 LLM 分析任务，输出多步执行计划
+        """
+        workspace_prompt = self.workspace.get_context_prompt()
+
+        prompt = f"""用户请求：{user_input[:500]}
+
+**工作区信息**:
+{workspace_prompt}
+
+**可用工具**:
+- bash: 执行 shell 命令
+- file_edit: 编辑或创建文件
+- glob: 查找文件
+- grep: 搜索内容
+- subagent: 委派给子代理
+
+请分析这个任务，生成一份执行计划：
+1. 任务复杂度（简单/中等/复杂）
+2. 需要执行的步骤（每步说明要做什么、用什么工具）
+3. 预计影响范围（修改哪些文件/系统）
+4. 潜在风险
+
+以 JSON 格式返回：
+```json
+{{
+    "complexity": "简单/中等/复杂",
+    "steps": [
+        {{"step": 1, "action": "动作描述", "tool": "工具名", "reason": "为什么做这步"}},
+        ...
+    ],
+    "impact": "影响范围说明",
+    "risks": ["风险 1", "风险 2"],
+    "estimated_steps": 数字
+}}
+```
+"""
+        try:
+            llm_result = self.llm.think(prompt, context)
+            content = llm_result.get("content", "")
+
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                return json.loads(json_match.group())
+        except Exception as e:
+            print(f"[计划任务] 错误：{e}")
+
+        # Fallback
+        return {
+            "complexity": "未知",
+            "steps": [{"step": 1, "action": "执行任务", "tool": "auto", "reason": "完成用户请求"}],
+            "impact": "未知",
+            "risks": [],
+            "estimated_steps": 1
+        }
+
+    def _is_complex_task_fallback(self, user_input: str) -> bool:
+        """Fallback 复杂任务检测（基于规则）"""
+        input_lower = user_input.lower()
+
+        # 中文复杂任务关键词
+        chinese_keywords = [
+            '完善', '改进', '优化', '实现', '开发', '构建',
+            '分析', '探索', '重构', '设计',
+            '创建', '搭建',
+            '修复', '调试',
+            '添加', '看看', '帮助', '做什么',
+        ]
+
+        # 英文复杂任务关键词
+        english_keywords = [
+            'improve', 'enhance', 'implement', 'develop', 'build',
+            'analyze', 'explore', 'refactor', 'design',
+            'create', 'setup',
+            'fix', 'debug',
+            'add', 'what can', 'what do',
+        ]
+
+        # 检测是否包含项目名
+        project_pattern = r'stock[-_]crawler|crawler|spider|爬虫'
+        has_project = bool(re.search(project_pattern, input_lower, re.IGNORECASE))
+
+        # 检测是否包含询问/探索意图
+        exploration_patterns = [
+            r'能为.*做什么',
+            r'可以.*什么',
+            r'帮.*看看',
+            r'what can.*do',
+            r'what can.*for',
+        ]
+        has_exploration = any(re.search(p, input_lower) for p in exploration_patterns)
+
+        has_chinese_keyword = any(kw in input_lower for kw in chinese_keywords)
+        has_english_keyword = any(kw in input_lower for kw in english_keywords)
+
+        return (has_chinese_keyword or has_english_keyword) or (has_project and has_exploration)
+
+    def confirm_permission(
+        self,
+        confirmed: bool,
+        remember: bool = False,
+        pending_action: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """确认权限请求
+
+        Args:
+            confirmed: 是否确认执行
+            remember: 是否记住选择
+            pending_action: 待执行的动作
+
+        Returns:
+            Dict: 执行结果
+        """
+        from mul_agent.hooks.permission import PermissionHook
+
+        # 获取权限钩子
+        permission_hook = None
+        for hook in self.hook_manager._hooks.get(HookEvent.PRE_TOOL_USE, []):
+            if isinstance(hook, PermissionHook):
+                permission_hook = hook
+                break
+
+        if not permission_hook:
+            return {"status": "error", "message": "Permission hook not found"}
+
+        # 确认请求
+        result = permission_hook.confirm_pending_request(confirmed, remember)
+
+        if not result:
+            return {"status": "error", "message": "No pending permission request"}
+
+        if not confirmed:
+            return {
+                "status": "success",
+                "message": "操作已拒绝",
+                "permission_request": result.to_dict()
+            }
+
+        # 如果确认了，继续执行待处理的动作
+        if pending_action:
+            # 重新执行动作（跳过权限检查，因为已经确认）
+            result = self.router.dispatch(
+                pending_action.get("route", "response"),
+                pending_action.get("params", {})
+            )
+
+            # 记录执行情况
+            self._record_route_execution(
+                route=pending_action.get("route", "response"),
+                params=pending_action.get("params", {}),
+                result=result,
+                user_input="permission_confirmed"
+            )
+
+            return {
+                "status": "success",
+                "message": "操作已确认并执行",
+                "result": result
+            }
+
+        return {"status": "success", "message": "操作已确认"}

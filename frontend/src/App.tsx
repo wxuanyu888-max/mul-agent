@@ -1,21 +1,13 @@
-import { useState } from 'react';
-import { WorkflowCanvas } from './components/workflow/WorkflowCanvas';
-import { LogViewer } from './components/logs/LogViewer';
-import { ChatPanel } from './components/chat/ChatPanel';
-import { MemoryPanel } from './components/memory/MemoryPanel';
-import TokenUsagePanel from './components/token/TokenUsagePanel';
-import IntegrationList from './components/settings/IntegrationList';
-import {
-  MessageSquare,
-  Activity,
-  FileText,
-  Database,
-  Bot,
-  BarChart3,
-  Key,
-} from 'lucide-react';
+import { useState } from "react";
+import { WorkflowCanvas } from "./components/workflow/WorkflowCanvas";
+import { LogViewer } from "./components/logs/LogViewer";
+import { ChatPanel } from "./components/chat/ChatPanel";
+import { MemoryPanel } from "./components/memory/MemoryPanel";
+import TokenUsagePanel from "./components/token/TokenUsagePanel";
+import IntegrationList from "./components/settings/IntegrationList";
+import { MessageSquare, Activity, FileText, Database, Bot, BarChart3, Key } from "lucide-react";
 
-type TabType = 'chat' | 'workflow' | 'logs' | 'memory' | 'token' | 'keys';
+type TabType = "chat" | "workflow" | "logs" | "memory" | "token" | "keys";
 
 interface NavItem {
   id: TabType;
@@ -24,35 +16,16 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { id: 'chat', label: 'Chat', icon: MessageSquare },
-  { id: 'workflow', label: 'Workflow', icon: Activity },
-  { id: 'logs', label: 'Logs', icon: FileText },
-  { id: 'memory', label: 'Memory', icon: Database },
-  { id: 'token', label: 'Token', icon: BarChart3 },
-  { id: 'keys', label: 'Settings', icon: Key },
+  { id: "chat", label: "Chat", icon: MessageSquare },
+  { id: "workflow", label: "Workflow", icon: Activity },
+  { id: "logs", label: "Logs", icon: FileText },
+  { id: "memory", label: "Memory", icon: Database },
+  { id: "token", label: "Token", icon: BarChart3 },
+  { id: "keys", label: "Settings", icon: Key },
 ];
 
 function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('chat');
-
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'chat':
-        return <ChatPanel />;
-      case 'workflow':
-        return <WorkflowCanvas />;
-      case 'logs':
-        return <LogViewer />;
-      case 'memory':
-        return <MemoryPanel />;
-      case 'token':
-        return <TokenUsagePanel />;
-      case 'keys':
-        return <IntegrationList />;
-      default:
-        return <WorkflowCanvas />;
-    }
-  };
+  const [activeTab, setActiveTab] = useState<TabType>("chat");
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -73,8 +46,8 @@ function App() {
                 onClick={() => setActiveTab(item.id)}
                 className={`w-14 h-14 rounded-xl flex items-center justify-center transition-all ${
                   activeTab === item.id
-                    ? 'bg-purple-100 text-purple-600 shadow-md'
-                    : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                    ? "bg-purple-100 text-purple-600 shadow-md"
+                    : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                 }`}
                 title={item.label}
               >
@@ -87,7 +60,9 @@ function App() {
         {/* Footer */}
         <div className="pt-4 border-t border-gray-200">
           <div className="text-xs text-gray-400 text-center">
-            MUL<br />Agent
+            MUL
+            <br />
+            Agent
           </div>
         </div>
       </div>
@@ -103,7 +78,25 @@ function App() {
 
         {/* Content Area */}
         <div className="h-[calc(100vh-8.5rem)] overflow-hidden">
-          {renderContent()}
+          {/* All tabs are mounted simultaneously to preserve state */}
+          <div className={`h-full ${activeTab === "chat" ? "" : "hidden"}`}>
+            <ChatPanel />
+          </div>
+          <div className={`h-full ${activeTab === "workflow" ? "" : "hidden"}`}>
+            <WorkflowCanvas />
+          </div>
+          <div className={`h-full ${activeTab === "logs" ? "" : "hidden"}`}>
+            <LogViewer />
+          </div>
+          <div className={`h-full ${activeTab === "memory" ? "" : "hidden"}`}>
+            <MemoryPanel />
+          </div>
+          <div className={`h-full ${activeTab === "token" ? "" : "hidden"}`}>
+            <TokenUsagePanel />
+          </div>
+          <div className={`h-full ${activeTab === "keys" ? "" : "hidden"}`}>
+            <IntegrationList />
+          </div>
         </div>
       </div>
     </div>

@@ -30,8 +30,16 @@ class BashHandler(BaseHandler):
         # 使用传入的 agent_id 或默认的 wangyue
         agent_id = self.get_agent_id(params)
         agent_config = self.config_manager.load(agent_id, "user")
-        allowed = agent_config.get("tools", {}).get("bash", {}).get("allowed_commands", ["*"])
-        forbidden = agent_config.get("tools", {}).get("bash", {}).get("forbidden_commands", [])
+
+        # 修复：tools.bash 可能是布尔值或字典
+        bash_config = agent_config.get("tools", {}).get("bash")
+        if isinstance(bash_config, dict):
+            allowed = bash_config.get("allowed_commands", ["*"])
+            forbidden = bash_config.get("forbidden_commands", [])
+        else:
+            # 如果是 True/布尔值，使用默认配置
+            allowed = ["*"]
+            forbidden = self.DANGEROUS_PATTERNS
 
         if not executor.is_safe(command, allowed, forbidden):
             return {"status": "error", "error_code": 1003, "message": f"Command not allowed: {command}"}

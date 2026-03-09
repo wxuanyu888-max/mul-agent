@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Loader2, RefreshCw, Trash2, Menu, MessageSquare } from 'lucide-react';
+import { Send, User, Bot, Loader2, RefreshCw, Trash2, Menu, MessageSquare, ChevronRight, ChevronDown, CheckCircle, AlertCircle, Play, Brain, Activity, Clock } from 'lucide-react';
 import { chatApi, infoApi } from '../../services/api';
 import { AgentStatePanel } from './AgentStatePanel';
 import { CommandAutocomplete, CommandSuggestion } from './CommandAutocomplete';
@@ -7,6 +7,18 @@ import { SessionList } from './SessionList';
 import { Message, Agent } from '../../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+// Execution step types for displaying agent actions
+interface ExecutionStep {
+  id: string;
+  type: 'status' | 'action' | 'tool' | 'result' | 'error';
+  status: 'pending' | 'running' | 'completed' | 'error';
+  title: string;
+  description?: string;
+  details?: any;
+  timestamp: number;
+  expanded?: boolean;
+}
 
 // Available commands (should match backend commands)
 const AVAILABLE_COMMANDS: CommandSuggestion[] = [
@@ -96,18 +108,140 @@ const markdownComponents = {
   ),
 };
 
+// Execution step status configuration
+const stepStatusConfig: Record<string, { label: string; color: string; icon: any }> = {
+  pending: { label: '等待中', color: 'text-gray-400', icon: Clock },
+  running: { label: '执行中', color: 'text-blue-500', icon: Play },
+  completed: { label: '已完成', color: 'text-green-500', icon: CheckCircle },
+  error: { label: '错误', color: 'text-red-500', icon: AlertCircle },
+};
+
+// Execution step type configuration
+const stepTypeConfig: Record<string, { color: string; bgColor: string }> = {
+  status: { color: 'text-gray-600', bgColor: 'bg-gray-50' },
+  action: { color: 'text-purple-600', bgColor: 'bg-purple-50' },
+  tool: { color: 'text-blue-600', bgColor: 'bg-blue-50' },
+  result: { color: 'text-green-600', bgColor: 'bg-green-50' },
+  error: { color: 'text-red-600', bgColor: 'bg-red-50' },
+};
+
+// ExecutionStepItem component
+function ExecutionStepItem({ step }: { step: ExecutionStep }) {
+  const [expanded, setExpanded] = useState(false);
+  const statusConfig = stepStatusConfig[step.status] || stepStatusConfig.pending;
+  const typeConfig = stepTypeConfig[step.type] || stepTypeConfig.status;
+  const StatusIcon = statusConfig.icon;
+
+  // Auto-expand planning steps
+  useEffect(() => {
+    if (step.type === 'action' || step.title.includes('LLM') || step.title.includes('决策')) {
+      setExpanded(true);
+    }
+  }, [step.type, step.title]);
+
+  const hasContent = step.details || step.description;
+
+  return (
+    <div className={`rounded-lg border ${expanded ? 'border-purple-200 bg-purple-50/50' : 'border-gray-100 bg-white'}`}>
+      <button
+        onClick={() => hasContent && setExpanded(!expanded)}
+        className={`w-full flex items-start gap-3 px-3 py-2.5 text-left ${!hasContent ? 'cursor-default' : 'cursor-pointer hover:bg-gray-50'}`}
+      >
+        {/* Status Icon */}
+        <div className={`flex-shrink-0 ${statusConfig.color} mt-0.5`}>
+          {step.status === 'running' ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <StatusIcon className="w-4 h-4" />
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {/* Title */}
+          <span className={`text-sm font-medium ${typeConfig.color}`}>
+            {step.title}
+          </span>
+
+          {/* Description */}
+          {step.description && (
+            <p className="text-xs text-gray-600 mt-1 whitespace-pre-wrap">
+              {step.description}
+            </p>
+          )}
+
+          {/* Timestamp */}
+          <span className="text-xs text-gray-400 block mt-1">
+            {new Date(step.timestamp).toLocaleTimeString()}
+          </span>
+        </div>
+
+        {/* Expand indicator */}
+        {hasContent && (
+          <div className={`transform transition-transform mt-0.5 ${expanded ? 'rotate-90' : ''}`}>
+            <ChevronRight className="w-3 h-3 text-gray-400" />
+          </div>
+        )}
+      </button>
+
+      {/* Details */}
+      {expanded && (
+        <div className="px-3 pb-3 pt-0">
+          {/* Description */}
+          {step.description && (
+            <div className="text-xs text-gray-700 bg-purple-50 rounded border border-purple-100 p-2 mb-2">
+              <span className="font-medium text-purple-700">思考：</span>
+              {step.description}
+            </div>
+          )}
+
+          {/* Details */}
+          {step.details && (
+            <div className="text-xs text-gray-600 bg-white rounded border border-gray-200 p-2 font-mono overflow-x-auto">
+              {typeof step.details === 'string'
+                ? step.details
+                : JSON.stringify(step.details, null, 2)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChatPanel() {
+  // 从 localStorage 恢复之前的状态
+  const savedSessionId = localStorage.getItem('chat_currentSessionId');
+  const savedAgent = localStorage.getItem('chat_selectedAgent');
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<string>('');
-  const [currentSessionId, setCurrentSessionId] = useState<string>('');
+  const [selectedAgent, setSelectedAgent] = useState<string>(savedAgent || '');
+  const [currentSessionId, setCurrentSessionId] = useState<string>(savedSessionId || '');
   const [showSessionList, setShowSessionList] = useState(false);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [hasSuggestions, setHasSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Execution steps for displaying agent actions (like Claude's thought process)
+  const [executionSteps, setExecutionSteps] = useState<ExecutionStep[]>([]);
+  const [showExecutionSteps, setShowExecutionSteps] = useState(true);
+
+  // 保存状态到 localStorage
+  useEffect(() => {
+    if (currentSessionId) {
+      localStorage.setItem('chat_currentSessionId', currentSessionId);
+    }
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    if (selectedAgent) {
+      localStorage.setItem('chat_selectedAgent', selectedAgent);
+    }
+  }, [selectedAgent]);
 
   const scrollToBottom = () => {
     if (messagesEndRef.current && typeof messagesEndRef.current.scrollIntoView === 'function') {
@@ -134,8 +268,13 @@ export function ChatPanel() {
         console.error('Failed to load agents:', err);
       }
 
-      // Load recent sessions
-      await loadSessions();
+      // Load recent sessions ONLY if we don't have a current session
+      if (!currentSessionId) {
+        await loadSessions();
+      } else {
+        // Restore messages from current session
+        await loadSessionMessages(currentSessionId);
+      }
     };
 
     loadData();
@@ -175,6 +314,7 @@ export function ChatPanel() {
   const handleNewChat = () => {
     setMessages([]);
     setCurrentSessionId('');
+    localStorage.removeItem('chat_currentSessionId');
     setInput('');
   };
 
@@ -195,31 +335,206 @@ export function ChatPanel() {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    setExecutionSteps([]); // Clear previous execution steps
 
     try {
-      const response = await chatApi.sendMessage({
-        message: userMessage.content,
-        agent_id: selectedAgent || undefined,
-        conversation_id: currentSessionId || undefined,
+      // Use streaming API to get real-time agent execution updates
+      const response = await fetch('/api/v1/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage.content,
+          agent_id: selectedAgent || undefined,
+          conversation_id: currentSessionId || undefined,
+        }),
       });
 
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: response.data.response,
-        timestamp: Date.now(),
-      };
+      if (!response.body) {
+        throw new Error('No response body');
+      }
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalResponse = '';
+      let conversationId = currentSessionId;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+
+              // Handle different event types
+              switch (event.type) {
+                case 'status':
+                  // Add status update as an execution step
+                  setExecutionSteps((prev) => {
+                    const lastStep = prev[prev.length - 1];
+                    if (lastStep && lastStep.type === 'status' && lastStep.status === 'running') {
+                      // Update existing status step
+                      return prev.map((step, i) =>
+                        i === prev.length - 1
+                          ? { ...step, title: event.message, status: 'completed' }
+                          : step
+                      );
+                    }
+                    // Add new status step
+                    return [
+                      ...prev,
+                      {
+                        id: `status-${Date.now()}`,
+                        type: 'status',
+                        status: 'running',
+                        title: event.message,
+                        timestamp: Date.now(),
+                      },
+                    ];
+                  });
+                  break;
+
+                case 'agent_state':
+                  // Update agent state panel with detailed execution info
+                  const state = event.state;
+
+                  // Handle planning/reasoning display
+                  if (state?.status === 'planning' && state?.current_action) {
+                    setExecutionSteps((prev) => {
+                      // Check if we already have a planning step
+                      const existingPlanning = prev.find(s => s.type === 'action' && s.title === 'LLM 决策');
+                      if (existingPlanning) {
+                        return prev.map(step =>
+                          step.id === existingPlanning.id
+                            ? { ...step, description: state.current_action, expanded: true }
+                            : step
+                        );
+                      }
+                      return [
+                        ...prev,
+                        {
+                          id: `planning-${Date.now()}`,
+                          type: 'action',
+                          status: 'completed',
+                          title: '🧠 LLM 决策',
+                          description: state.current_action,
+                          timestamp: Date.now(),
+                          expanded: true,
+                        },
+                      ];
+                    });
+                  }
+
+                  // Handle tool execution display
+                  if (state?.route && state.route !== 'uncertain' && state?.status === 'executing') {
+                    setExecutionSteps((prev) => {
+                      const existingToolStep = prev.find(
+                        (s) => s.type === 'tool' && s.status === 'running'
+                      );
+                      if (existingToolStep) {
+                        return prev.map((step) =>
+                          step.id === existingToolStep.id
+                            ? { ...step, title: `执行 ${state.route}`, details: state.details }
+                            : step
+                        );
+                      }
+                      // Add new tool execution step
+                      return [
+                        ...prev,
+                        {
+                          id: `tool-${Date.now()}`,
+                          type: 'tool',
+                          status: 'running',
+                          title: `执行 ${state.route}`,
+                          details: state.details,
+                          timestamp: Date.now(),
+                        },
+                      ];
+                    });
+                  }
+
+                  // Handle iteration display
+                  if (state?.status === 'iteration') {
+                    setExecutionSteps((prev) => {
+                      const lastStep = prev[prev.length - 1];
+                      if (lastStep && lastStep.type === 'status') {
+                        return prev.map((step, i) =>
+                          i === prev.length - 1
+                            ? { ...step, title: state.current_action, status: 'completed' }
+                            : step
+                        );
+                      }
+                      return prev;
+                    });
+                  }
+                  break;
+
+                case 'response':
+                  finalResponse = event.response;
+                  if (event.conversation_id) {
+                    conversationId = event.conversation_id;
+                  }
+                  break;
+
+                case 'error':
+                  setExecutionSteps((prev) => [
+                    ...prev,
+                    {
+                      id: `error-${Date.now()}`,
+                      type: 'error',
+                      status: 'error',
+                      title: '发生错误',
+                      description: event.error,
+                      timestamp: Date.now(),
+                    },
+                  ]);
+                  break;
+
+                case 'complete':
+                  // Execution completed
+                  setExecutionSteps((prev) =>
+                    prev.map((step, i) =>
+                      i === prev.length - 1 && step.status === 'running'
+                        ? { ...step, status: 'completed' }
+                        : step
+                    )
+                  );
+                  break;
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE event:', e);
+            }
+          }
+        }
+      }
+
+      // Add assistant response to messages
+      if (finalResponse) {
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: finalResponse,
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      }
 
       // Update session ID if this is a new conversation
-      if (response.data.conversation_id && !currentSessionId) {
-        setCurrentSessionId(response.data.conversation_id);
+      if (conversationId && currentSessionId !== conversationId) {
+        setCurrentSessionId(conversationId);
       }
     } catch (err) {
       console.error('Failed to send message:', err);
       const errorMessage: Message = {
         role: 'assistant',
-        content: 'Error: Failed to get response from agent',
+        content: `Error: ${err instanceof Error ? err.message : 'Failed to get response from agent'}`,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -456,7 +771,45 @@ export function ChatPanel() {
                 </div>
               );
             })}
-            {loading && (
+
+            {/* Execution Steps Display (like Claude's thought process) */}
+            {loading && executionSteps.length > 0 && (
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center flex-shrink-0">
+                  <Bot className="w-4 h-4 text-purple-600" />
+                </div>
+                <div className="flex-1 max-w-[70%]">
+                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                    {/* Header */}
+                    <button
+                      onClick={() => setShowExecutionSteps(!showExecutionSteps)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 text-purple-600 animate-spin" />
+                        <span className="text-sm font-medium text-gray-700">Agent 正在执行</span>
+                      </div>
+                      {showExecutionSteps ? (
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-gray-500" />
+                      )}
+                    </button>
+
+                    {/* Steps List */}
+                    {showExecutionSteps && (
+                      <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
+                        {executionSteps.map((step, index) => (
+                          <ExecutionStepItem key={step.id} step={step} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {loading && executionSteps.length === 0 && (
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center">
                   <Bot className="w-4 h-4 text-purple-600" />
@@ -469,6 +822,7 @@ export function ChatPanel() {
                 </div>
               </div>
             )}
+
             <div ref={messagesEndRef} />
           </div>
         )}

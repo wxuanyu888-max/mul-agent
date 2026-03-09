@@ -15,6 +15,7 @@ import type {
   AllAgentsTokenUsage,
   Integration,
   ApiMessage,
+  Interaction,
 } from '../types';
 
 // Use relative path to work with Vite proxy in development
@@ -155,8 +156,18 @@ export const infoApi = {
   getLoadedDocs: (agentId: string) =>
     api.get<{ agent_id: string; loaded_docs: Record<string, { content: string; attributes: Record<string, unknown> }>; doc_count: number }>(`/info/agent/${agentId}/loaded-docs`),
 
-  getInteractions: (limit: number = 20) =>
-    api.get<{ interactions: Array<{ run_id: string; source: string; target: string; type: string; task: string; status: string; timestamp: number }> }>('/info/interactions', { params: { limit } }),
+  getInteractions: (limit: number = 20, timeWindow?: number) =>
+    api.get<{ interactions: Interaction[] }>('/info/interactions', { params: { limit, time_window: timeWindow } }),
+
+  // Get interactions between two specific agents
+  getAgentInteractions: (source: string, target: string, timeWindow?: number, limit?: number) =>
+    api.get<{ interactions: Interaction[] }>(`/info/interactions/${source}/${target}`, {
+      params: { time_window: timeWindow, limit }
+    }),
+
+  // Batch get files content
+  getFilesBatch: (filePaths: string[]) =>
+    api.post<{ files: Record<string, { content: string; size?: number; exists?: boolean; error?: string }> }>('/info/files/batch', { file_paths: filePaths }),
 };
 
 // Projects API

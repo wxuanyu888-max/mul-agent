@@ -43,15 +43,15 @@ export function MemoryPanel() {
         memoryApi.getHandover(agentId),
       ]);
 
-      console.log('[MemoryPanel] Short-term response:', shortRes.data);
-      console.log('[MemoryPanel] Long-term response:', longRes.data);
-      console.log('[MemoryPanel] Handover response:', handoverRes.data);
-
-      setShortTermMemories(shortRes.data.memories || []);
-      setLongTermMemories(longRes.data.memories || []);
-      setHandoverMemories(handoverRes.data.memories || []);
+      setShortTermMemories(shortRes.data?.memories || []);
+      setLongTermMemories(longRes.data?.memories || []);
+      setHandoverMemories(handoverRes.data?.memories || []);
     } catch (err) {
       console.error('Failed to fetch memories:', err);
+      // Set empty arrays on error to avoid undefined state
+      setShortTermMemories([]);
+      setLongTermMemories([]);
+      setHandoverMemories([]);
     } finally {
       setLoading(false);
     }

@@ -166,6 +166,7 @@ export function SessionList({
       setSessions(res.data.sessions || []);
     } catch (err) {
       console.error('Failed to load sessions:', err);
+      setSessions([]); // Set empty array on error to avoid undefined state
     } finally {
       setLoading(false);
     }

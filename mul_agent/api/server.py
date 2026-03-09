@@ -77,6 +77,7 @@ import mul_agent.api.routes.memory as memory_routes
 import mul_agent.api.routes.projects as projects_routes
 import mul_agent.api.routes.token_usage as token_usage_routes
 import mul_agent.api.routes.integrations as integrations_routes
+import mul_agent.api.routes.stream as stream_routes
 
 app.include_router(info_routes.router, prefix="/api/v1", tags=["info"])
 app.include_router(agents_routes.router, prefix="/api/v1", tags=["agents"])
@@ -86,6 +87,7 @@ app.include_router(memory_routes.router, prefix="/api/v1", tags=["memory"])
 app.include_router(projects_routes.router, prefix="/api/v1", tags=["projects"])
 app.include_router(token_usage_routes.router, prefix="/api/v1", tags=["token_usage"])
 app.include_router(integrations_routes.router, prefix="/api/v1", tags=["integrations"])
+app.include_router(stream_routes.router, prefix="/api/v1", tags=["stream"])
 
 # Also include agents router without v1 for frontend compatibility
 app.include_router(agents_routes.router, prefix="/api", tags=["agents-v2"])

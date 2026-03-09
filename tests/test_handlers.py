@@ -12,6 +12,9 @@ from mul_agent.brain.handlers.memory import MemoryHandler
 from mul_agent.brain.handlers.heart import HeartHandler
 from mul_agent.brain.handlers.response import ResponseHandler
 from mul_agent.brain.handlers.create_user import CreateUserHandler
+from mul_agent.brain.handlers.glob import GlobHandler
+from mul_agent.brain.handlers.grep import GrepHandler
+from mul_agent.brain.handlers.file_edit import FileEditHandler
 from mul_agent.brain.config_manager import ConfigManager
 
 
@@ -415,3 +418,236 @@ class TestHandlerIntegration:
             "focus": "status"
         })
         assert heart_result["status"] == "success"
+
+
+class TestGlobHandler:
+    """GlobHandler test cases"""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create temporary directory for tests"""
+        temp_path = tempfile.mkdtemp()
+        yield Path(temp_path)
+        shutil.rmtree(temp_path)
+
+    @pytest.fixture
+    def glob_handler(self, temp_dir):
+        """Create GlobHandler instance"""
+        config_manager = ConfigManager(temp_dir)
+        return GlobHandler(config_manager, agent_id="test_agent")
+
+    def test_handle_glob_py_files(self, glob_handler, temp_dir):
+        """Test globbing *.py files"""
+        # Create test files
+        (temp_dir / "test1.py").write_text("print(1)")
+        (temp_dir / "test2.py").write_text("print(2)")
+        (temp_dir / "test.txt").write_text("text")
+
+        params = {"pattern": "*.py", "path": str(temp_dir)}
+        result = glob_handler.handle(params)
+
+        assert result["status"] == "success"
+        assert result["count"] == 2
+        assert "test1.py" in result["files"]
+        assert "test2.py" in result["files"]
+
+    def test_handle_glob_recursive(self, glob_handler, temp_dir):
+        """Test recursive globbing"""
+        # Create nested structure
+        subdir = temp_dir / "subdir"
+        subdir.mkdir()
+        (temp_dir / "test1.py").write_text("print(1)")
+        (subdir / "test2.py").write_text("print(2)")
+
+        params = {"pattern": "*.py", "path": str(temp_dir), "recursive": True}
+        result = glob_handler.handle(params)
+
+        assert result["status"] == "success"
+        assert result["count"] == 2
+
+    def test_handle_glob_missing_pattern(self, glob_handler):
+        """Test missing pattern parameter"""
+        result = glob_handler.handle({"path": "."})
+        assert result["status"] == "error"
+
+    def test_handle_glob_path_not_found(self, glob_handler):
+        """Test non-existent path"""
+        params = {"pattern": "*.py", "path": "/nonexistent/path/xyz"}
+        result = glob_handler.handle(params)
+        assert result["status"] == "error"
+
+
+class TestGrepHandler:
+    """GrepHandler test cases"""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create temporary directory for tests"""
+        temp_path = tempfile.mkdtemp()
+        yield Path(temp_path)
+        shutil.rmtree(temp_path)
+
+    @pytest.fixture
+    def grep_handler(self, temp_dir):
+        """Create GrepHandler instance"""
+        config_manager = ConfigManager(temp_dir)
+        return GrepHandler(config_manager, agent_id="test_agent")
+
+    def test_handle_grep_simple(self, grep_handler, temp_dir):
+        """Test simple grep search"""
+        # Create test file
+        test_file = temp_dir / "test.py"
+        test_file.write_text("def test_one():\n    pass\n\ndef test_two():\n    pass\n")
+
+        params = {"pattern": "def test", "path": str(temp_dir)}
+        result = grep_handler.handle(params)
+
+        assert result["status"] == "success"
+        assert result["count"] == 2
+
+    def test_handle_grep_regex(self, grep_handler, temp_dir):
+        """Test regex grep search"""
+        # Create test file
+        test_file = temp_dir / "test.py"
+        test_file.write_text("x = 1\ny = 2\nz = 'hello'\n")
+
+        params = {"pattern": r"\w+ = \d+", "path": str(temp_dir)}
+        result = grep_handler.handle(params)
+
+        assert result["status"] == "success"
+        assert result["count"] == 2
+
+    def test_handle_grep_ignore_case(self, grep_handler, temp_dir):
+        """Test case-insensitive grep"""
+        # Create test file
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("Hello\nHELLO\nhello\n")
+
+        params = {"pattern": "hello", "path": str(temp_dir), "ignore_case": True}
+        result = grep_handler.handle(params)
+
+        assert result["status"] == "success"
+        assert result["count"] == 3
+
+    def test_handle_grep_with_context(self, grep_handler, temp_dir):
+        """Test grep with context lines"""
+        # Create test file
+        test_file = temp_dir / "test.py"
+        test_file.write_text("line1\nline2\nMATCH\nline4\nline5\n")
+
+        params = {"pattern": "MATCH", "path": str(temp_dir), "context": 1}
+        result = grep_handler.handle(params)
+
+        assert result["status"] == "success"
+        # Each match should have context
+        if result["matches"]:
+            match = result["matches"][0]
+            assert "context" in match
+
+    def test_handle_grep_missing_pattern(self, grep_handler):
+        """Test missing pattern parameter"""
+        result = grep_handler.handle({"path": "."})
+        assert result["status"] == "error"
+
+    def test_handle_grep_invalid_regex(self, grep_handler, temp_dir):
+        """Test invalid regex pattern"""
+        params = {"pattern": "[invalid(regex", "path": str(temp_dir)}
+        result = grep_handler.handle(params)
+        assert result["status"] == "error"
+
+
+class TestFileEditHandler:
+    """FileEditHandler test cases"""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create temporary directory for tests"""
+        temp_path = tempfile.mkdtemp()
+        yield Path(temp_path)
+        shutil.rmtree(temp_path)
+
+    @pytest.fixture
+    def file_edit_handler(self, temp_dir):
+        """Create FileEditHandler instance"""
+        config_manager = ConfigManager(temp_dir)
+        return FileEditHandler(config_manager, agent_id="test_agent")
+
+    def test_handle_read_action(self, file_edit_handler, temp_dir):
+        """Test read action"""
+        # Create test file
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("Line 1\nLine 2\nLine 3\n")
+
+        params = {"action": "read", "path": str(test_file)}
+        result = file_edit_handler.handle(params)
+
+        assert result["status"] == "success"
+        assert "Line 1" in result["content"]
+
+    def test_handle_create_action(self, file_edit_handler, temp_dir):
+        """Test create action"""
+        test_file = temp_dir / "new_file.txt"
+
+        params = {"action": "create", "path": str(test_file), "content": "New content"}
+        result = file_edit_handler.handle(params)
+
+        assert result["status"] == "success"
+        assert test_file.exists()
+        assert test_file.read_text() == "New content"
+
+    def test_handle_edit_action(self, file_edit_handler, temp_dir):
+        """Test edit action"""
+        # Create test file
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("Line 1\nLine 2\nLine 3\nLine 4\n")
+
+        params = {
+            "action": "edit",
+            "path": str(test_file),
+            "start": 2,
+            "end": 3,
+            "content": "New Line 2"
+        }
+        result = file_edit_handler.handle(params)
+
+        assert result["status"] == "success"
+        content = test_file.read_text()
+        assert "New Line 2" in content
+
+    def test_handle_insert_action(self, file_edit_handler, temp_dir):
+        """Test insert action"""
+        # Create test file
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("Line 1\nLine 2\n")
+
+        params = {
+            "action": "insert",
+            "path": str(test_file),
+            "line": 1,
+            "content": "Inserted Line"
+        }
+        result = file_edit_handler.handle(params)
+
+        assert result["status"] == "success"
+        content = test_file.read_text()
+        assert "Inserted Line" in content
+
+    def test_handle_delete_lines_action(self, file_edit_handler, temp_dir):
+        """Test delete_lines action"""
+        # Create test file
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("Line 1\nLine 2\nLine 3\n")
+
+        params = {
+            "action": "delete_lines",
+            "path": str(test_file),
+            "start": 2,
+            "end": 2
+        }
+        result = file_edit_handler.handle(params)
+
+        assert result["status"] == "success"
+        content = test_file.read_text()
+        assert "Line 2" not in content
+        assert "Line 1" in content
+        assert "Line 3" in content

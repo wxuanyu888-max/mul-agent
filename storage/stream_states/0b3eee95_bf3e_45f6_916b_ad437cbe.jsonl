@@ -1,0 +1,2 @@
+{"type": "input_received", "timestamp": 1772970507.213205, "agent_id": "bob", "session_id": "0b3eee95-bf3e-45f6-916b-ad437cbe9d24", "data": {"status": "received", "current_action": "处理用户输入", "route": null, "elapsed_ms": 0, "details": null}, "sequence": 0}
+{"type": "planning", "timestamp": 1772970507.2141922, "agent_id": "bob", "session_id": "0b3eee95-bf3e-45f6-916b-ad437cbe9d24", "data": {"status": "autonomous_mode", "current_action": "启动自主执行模式", "route": "routing", "elapsed_ms": 1, "details": null}, "sequence": 1}

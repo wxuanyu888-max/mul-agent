@@ -6,6 +6,7 @@
 - 动态注册命令
 - 命令别名
 - 命令帮助
+- 对话管理命令（history, undo, summary, clear, resume）
 """
 
 from mul_agent.commands.base import BaseCommand, CommandContext, CommandResult
@@ -18,6 +19,17 @@ from mul_agent.commands.builtin import (
     HookCommand,
     MemoryCommand,
     BashCommand,
+    PermissionCommand,
+    SearchCommand,
+    CodeIndexCommand,
+    CheckpointCommand,
+)
+from mul_agent.commands.dialog import (
+    HistoryCommand,
+    UndoCommand,
+    SummaryCommand,
+    ClearCommand,
+    ResumeCommand,
 )
 
 __all__ = [
@@ -32,4 +44,14 @@ __all__ = [
     "HookCommand",
     "MemoryCommand",
     "BashCommand",
+    "PermissionCommand",
+    "SearchCommand",
+    "CodeIndexCommand",
+    "CheckpointCommand",
+    # 对话管理命令
+    "HistoryCommand",
+    "UndoCommand",
+    "SummaryCommand",
+    "ClearCommand",
+    "ResumeCommand",
 ]

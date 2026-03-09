@@ -1,9 +1,11 @@
 """Chat API routes"""
 
 import logging
-from fastapi import APIRouter, HTTPException
+import json as json_lib
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, AsyncGenerator
 from pathlib import Path
 from mul_agent.brain.brain import Brain
 from mul_agent.brain.config_manager import ConfigManager
@@ -113,23 +115,32 @@ async def chat(request: ChatRequest):
                     detail=f"Agent error ({error_code}): {error_msg}"
                 )
 
-            # Extract response from different result structures
-            response = (
-                result.get("response", "")
-                or result.get("content", "")
-                or result.get("message", "")
-            )
+            # 优先提取 data.message 或 data.report（Markdown 报告通常在这里）
+            if isinstance(result.get("data"), dict):
+                response = result["data"].get("message", "") or result["data"].get("report", "")
+
+            # 尝试 result.message
+            if not response:
+                response = result.get("message", "")
+
+            # 尝试 result.content
+            if not response:
+                response = result.get("content", "")
+
+            # 尝试 result.response
+            if not response:
+                response = result.get("response", "")
 
             # Handle nested structures
-            if not response and result.get("data"):
-                result_data = result.get("data", {})
-                if isinstance(result_data, dict):
-                    response = result_data.get("message", "") or result_data.get("output", "")
-
             if not response and result.get("result"):
                 result_data = result.get("result", {})
                 if isinstance(result_data, dict):
                     response = result_data.get("message", "") or result_data.get("output", "")
+
+            if not response and result.get("data"):
+                result_data = result.get("data", {})
+                if isinstance(result_data, dict):
+                    response = result_data.get("output", "")
 
             # Parse JSON if response is a JSON string
             if response and isinstance(response, str) and response.strip().startswith("{"):
@@ -191,6 +202,193 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logger.error(f"Chat error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to process message: {str(e)}")
+
+
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """Handle chat request with streaming response (SSE) - streams agent execution steps"""
+    import time
+    import uuid
+    import asyncio
+    from asyncio import Queue
+
+    agent_id = request.agent_id or "wangyue"
+    brain = get_brain(agent_id)
+
+    logger.info(f"Chat stream request from agent: {agent_id}, message: {request.message[:50]}...")
+
+    # Generate or use conversation_id
+    conversation_id = request.conversation_id
+    if not conversation_id:
+        conversation_id = str(uuid.uuid4())
+
+    # Create a queue for streaming events
+    event_queue: Queue = Queue()
+    stream_done = asyncio.Event()
+
+    # State update listener - listens to agent state changes from file
+    async def listen_to_state_updates():
+        """Listen to agent state updates and forward to queue"""
+        state_file = Path(f"storage/agent_states/{agent_id}.json")
+        last_state = None
+        last_modified = 0
+
+        while not stream_done.is_set():
+            try:
+                if state_file.exists():
+                    stat = state_file.stat()
+                    modified = stat.st_mtime
+                    if modified > last_modified:
+                        try:
+                            with open(state_file) as f:
+                                current_state = json_lib.load(f)
+                            if current_state != last_state:
+                                await event_queue.put({
+                                    "type": "agent_state",
+                                    "state": current_state
+                                })
+                                last_state = current_state
+                                last_modified = modified
+                        except Exception as e:
+                            logger.error(f"Failed to read state file: {e}")
+                await asyncio.sleep(0.05)  # Poll every 50ms for responsive updates
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"State listener error: {e}")
+                await asyncio.sleep(0.1)
+
+    async def stream_events() -> AsyncGenerator[str, None]:
+        """Generate SSE events"""
+        start_time = time.time()
+
+        try:
+            # Send initial state
+            yield f"data: {json_lib.dumps({'type': 'status', 'status': 'received', 'message': '已接收消息', 'timestamp': time.time()})}\n\n"
+            yield f"data: {json_lib.dumps({'type': 'status', 'status': 'thinking', 'message': '正在分析请求...', 'timestamp': time.time()})}\n\n"
+
+            # Run brain.think in a background task
+            result_container = {"result": None, "error": None, "done": False}
+
+            async def run_brain():
+                loop = asyncio.get_event_loop()
+                try:
+                    # Start state listener in parallel
+                    listener_task = asyncio.create_task(listen_to_state_updates())
+
+                    try:
+                        result = await loop.run_in_executor(None, brain.think, request.message)
+                        result_container["result"] = result
+                    finally:
+                        # Stop the listener
+                        stream_done.set()
+                        listener_task.cancel()
+                        try:
+                            await listener_task
+                        except asyncio.CancelledError:
+                            pass
+                except Exception as e:
+                    result_container["error"] = str(e)
+                finally:
+                    result_container["done"] = True
+
+            # Start brain execution in background
+            brain_task = asyncio.create_task(run_brain())
+
+            # Wait for brain to complete, forwarding state updates
+            while not result_container["done"]:
+                await asyncio.sleep(0.05)
+                # Forward any queued state updates
+                while not event_queue.empty():
+                    event = await event_queue.get()
+                    yield f"data: {json_lib.dumps(event)}\n\n"
+
+            # Brain completed, get result
+            await brain_task
+
+            if result_container["error"]:
+                yield f"data: {json_lib.dumps({'type': 'error', 'error': result_container['error']})}\n\n"
+            else:
+                result = result_container["result"]
+                response = ""
+
+                if isinstance(result, dict):
+                    if result.get("status") == "error":
+                        yield f"data: {json_lib.dumps({'type': 'error', 'error': result.get('message', 'Unknown error')})}\n\n"
+                    else:
+                        response = ""
+
+                        # 优先提取 data.message（Markdown 报告通常在这里）
+                        if isinstance(result.get("data"), dict):
+                            response = result["data"].get("message", "")
+
+                        # 尝试 result.message
+                        if not response:
+                            response = result.get("message", "")
+
+                        # 尝试 result.content
+                        if not response:
+                            response = result.get("content", "")
+
+                        # 尝试 result.response
+                        if not response:
+                            response = result.get("response", "")
+
+                        # 尝试嵌套的 result.result.message
+                        if not response and result.get("result"):
+                            result_data = result.get("result", {})
+                            if isinstance(result_data, dict):
+                                response = result_data.get("message", "")
+
+                        # 尝试 data.output
+                        if not response and isinstance(result.get("data"), dict):
+                            response = result["data"].get("output", "")
+
+                        # 尝试从 report 字段提取（自主模式任务报告）
+                        if not response and isinstance(result.get("data"), dict):
+                            response = result["data"].get("report", "")
+
+                        if not response:
+                            response = str(result) if result else "No response generated"
+
+                        if isinstance(response, dict):
+                            response = response.get("message", str(response))
+                        if isinstance(response, str):
+                            response = response.strip()
+                            # Clean up JSON wrapper if present
+                            if response.startswith('{') and response.endswith('}'):
+                                try:
+                                    parsed = json_lib.loads(response)
+                                    if isinstance(parsed, dict):
+                                        response = parsed.get("message", response)
+                                except:
+                                    pass
+
+                        # Save to conversation
+                        conversation_manager.save_message(
+                            agent_id=agent_id,
+                            session_id=conversation_id,
+                            role="user",
+                            content=request.message
+                        )
+                        conversation_manager.save_message(
+                            agent_id=agent_id,
+                            session_id=conversation_id,
+                            role="assistant",
+                            content=response
+                        )
+
+                        yield f"data: {json_lib.dumps({'type': 'response', 'response': response, 'conversation_id': conversation_id})}\n\n"
+
+            # Send completion event
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            yield f"data: {json_lib.dumps({'type': 'complete', 'elapsed_ms': elapsed_ms})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Stream error: {str(e)}", exc_info=True)
+            yield f"data: {json_lib.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return StreamingResponse(stream_events(), media_type="text/event-stream")
 
 
 @router.get("/chat/history")

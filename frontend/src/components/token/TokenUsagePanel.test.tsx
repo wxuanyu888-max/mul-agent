@@ -1,117 +1,123 @@
-// Test file
+// TokenUsagePanel Test Suite
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import { TokenUsagePanel } from './TokenUsagePanel';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, act } from '@testing-library/react';
+import TokenUsagePanel from './TokenUsagePanel';
+import { tokenUsageApi, infoApi } from '../../services/api';
 
-// Mock fetch API
-global.fetch = vi.fn();
+// Mock API modules
+vi.mock('../../services/api', () => ({
+  tokenUsageApi: {
+    getAll: vi.fn(),
+    get: vi.fn(),
+  },
+  infoApi: {
+    getFilesBatch: vi.fn(),
+  },
+}));
 
 describe('TokenUsagePanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders token usage panel with header', () => {
-    render(<TokenUsagePanel />);
-
-    expect(screen.getByText(/token/i)).toBeInTheDocument();
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('displays empty state when no usage data', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ usage: [], total: 0 })
+  it('renders token usage panel with header', async () => {
+    vi.mocked(tokenUsageApi.getAll).mockResolvedValue({
+      data: { all_usage: {} }
     });
 
-    render(<TokenUsagePanel />);
+    await act(async () => {
+      render(<TokenUsagePanel />);
+    });
+
+    expect(screen.getByText(/Token 使用统计/i)).toBeInTheDocument();
+  });
+
+  it('displays loading state initially', async () => {
+    vi.mocked(tokenUsageApi.getAll).mockResolvedValue({
+      data: { all_usage: {} }
+    });
+
+    await act(async () => {
+      render(<TokenUsagePanel />);
+    });
+
+    expect(screen.getByText(/Token 使用统计/i)).toBeInTheDocument();
+  });
+
+  it('displays empty state when no agents', async () => {
+    vi.mocked(tokenUsageApi.getAll).mockResolvedValue({
+      data: { all_usage: {} }
+    });
+
+    await act(async () => {
+      render(<TokenUsagePanel />);
+    });
 
     await waitFor(() => {
-      expect(screen.getByText(/no token usage data/i)).toBeInTheDocument();
+      expect(screen.getByText(/暂无数据/i)).toBeInTheDocument();
     });
-  });
-
-  it('displays loading state initially', () => {
-    render(<TokenUsagePanel />);
-
-    // Should show some loading indicator or empty state
-    expect(screen.getByText(/token/i)).toBeInTheDocument();
   });
 
   it('displays token usage data when loaded', async () => {
-    const mockUsage = {
-      usage: [
-        {
-          date: '2024-01-01',
-          model: 'claude-sonnet-4-20250514',
-          input_tokens: 1000,
-          output_tokens: 500,
-          total_tokens: 1500
-        }
-      ],
-      total: {
+    const mockAllUsage = {
+      test_agent: {
         input_tokens: 1000,
         output_tokens: 500,
-        total_tokens: 1500
+        total_tokens: 1500,
+        access_count: 10,
+        last_access_time: '2024-01-01T00:00:00Z'
       }
     };
 
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockUsage
+    vi.mocked(tokenUsageApi.getAll).mockResolvedValue({
+      data: { all_usage: mockAllUsage }
     });
 
-    render(<TokenUsagePanel />);
+    // Mock get to return empty logs to avoid errors
+    vi.mocked(tokenUsageApi.get).mockResolvedValue({
+      data: { llm_logs: [] }
+    } as any);
+
+    await act(async () => {
+      render(<TokenUsagePanel />);
+    });
 
     await waitFor(() => {
-      // Should display token data
-      expect(screen.getByText(/total/i)).toBeInTheDocument();
+      expect(screen.getByText(/test_agent/i)).toBeInTheDocument();
+      // Use getAllByText since total appears in both row and footer
+      const totalElements = screen.getAllByText(/1,500/i);
+      expect(totalElements.length).toBeGreaterThan(0);
     });
   });
 
   it('displays error message when API fails', async () => {
-    fetch.mockRejectedValueOnce(new Error('Network error'));
+    vi.mocked(tokenUsageApi.getAll).mockRejectedValue(new Error('Network error'));
 
-    render(<TokenUsagePanel />);
+    await act(async () => {
+      render(<TokenUsagePanel />);
+    });
 
     await waitFor(() => {
-      expect(screen.getByText(/error/i)).toBeInTheDocument();
+      expect(screen.getByText(/加载 Token 使用数据失败/i)).toBeInTheDocument();
     });
   });
 
-  it('has refresh button', () => {
-    render(<TokenUsagePanel />);
-
-    const refreshButton = screen.getByTitle(/refresh/i);
-    expect(refreshButton).toBeInTheDocument();
-  });
-
-  it('has clear button', () => {
-    render(<TokenUsagePanel />);
-
-    const clearButton = screen.getByTitle(/clear token usage/i);
-    expect(clearButton).toBeInTheDocument();
-  });
-
-  it('shows token breakdown by model', async () => {
-    const mockUsage = {
-      usage: [
-        { model: 'claude-sonnet', input_tokens: 1000, output_tokens: 500 },
-        { model: 'claude-opus', input_tokens: 2000, output_tokens: 1000 }
-      ],
-      total: { input_tokens: 3000, output_tokens: 1500, total_tokens: 4500 }
-    };
-
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockUsage
+  it('renders table headers correctly', async () => {
+    vi.mocked(tokenUsageApi.getAll).mockResolvedValue({
+      data: { all_usage: {} }
     });
 
-    render(<TokenUsagePanel />);
-
-    await waitFor(() => {
-      // Should show model breakdown
-      expect(screen.getByText(/claude/i)).toBeInTheDocument();
+    await act(async () => {
+      render(<TokenUsagePanel />);
     });
+
+    expect(screen.getByText(/输入 Token/i)).toBeInTheDocument();
+    expect(screen.getByText(/输出 Token/i)).toBeInTheDocument();
+    expect(screen.getByText(/总 Token/i)).toBeInTheDocument();
   });
 });

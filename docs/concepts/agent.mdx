@@ -1,0 +1,45 @@
+---
+title: Agent 系统
+description: 了解 Mul-Agent 的多 Agent 架构
+---
+
+# Agent 系统
+
+Mul-Agent 的核心是多 Agent 协作系统。
+
+## 核心架构
+
+```
+┌─────────────┐
+│ core_brain  │  ← 团队指挥官
+└──────┬──────┘
+       │
+   ┌───┴────┬─────────┐
+   │        │         │
+┌──▼──┐  ┌──▼──┐  ┌──▼────┐
+│alice│  │ bob │  │wangyue│
+└─────┘  └─────┘  └───────┘
+ 代码实现  技术规划   日常助手
+```
+
+## Agent 配置
+
+每个 Agent 都有独立的配置文件：
+
+```yaml
+---
+agent_id: alice
+name: Alice
+role:
+  type: executor
+  title: 代码工程师
+tools:
+  file_edit: true
+  bash: true
+---
+```
+
+## 下一步
+
+- [Brain 系统](/concepts/brain)
+- [工具系统](/concepts/tools)

@@ -1,0 +1,22 @@
+{
+  "name": "mul-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "lint:ci": "oxlint --format=github",
+    "format": "oxfmt write frontend/**/*.ts frontend/**/*.tsx",
+    "format:check": "oxfmt check frontend/**/*.ts frontend/**/*.tsx",
+    "format:write": "oxfmt write frontend/**/*.ts frontend/**/*.tsx",
+    "check": "pnpm lint && pnpm format:check"
+  },
+  "devDependencies": {
+    "oxlint": "latest",
+    "oxfmt": "latest"
+  },
+  "workspaces": [
+    "frontend"
+  ]
+}

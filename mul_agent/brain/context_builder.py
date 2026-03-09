@@ -5,6 +5,13 @@ from pathlib import Path
 
 from mul_agent.brain.compressor import ContextCompressor
 
+# 导入新的 Skill Loader
+try:
+    from mul_agent.brain.skill_loader import SkillLoader
+    HAS_SKILL_LOADER = True
+except ImportError:
+    HAS_SKILL_LOADER = False
+
 
 class ContextBuilder:
     """上下文构建器 - 智能聚合多个文本来源
@@ -133,6 +140,19 @@ class ContextBuilder:
         # 尝试从配置文件加载提示词模板
         prompt_template = self.config_manager.load_prompt(agent_id, "context_prompt")
 
+        # 加载 SKILL.md（新格式）
+        skills_prompt = ""
+        if HAS_SKILL_LOADER:
+            try:
+                wang_dir = self.config_manager.wang_dir
+                agent_team_dir = wang_dir / "agent-team"
+                skill_loader = SkillLoader(agent_team_dir)
+                skills = skill_loader.get_enabled_skills()
+                if skills:
+                    skills_prompt = skill_loader.build_skills_prompt(skills)
+            except Exception as e:
+                print(f"[WARN] Failed to load SKILL.md: {e}")
+
         if format == "markdown":
             # 如果配置文件中没有提示词，使用默认 Markdown 格式
             if not prompt_template or prompt_template.startswith("Current Task:"):
@@ -165,6 +185,15 @@ class ContextBuilder:
                         ""
                     ])
 
+                # 添加可用 Agent 列表（SKILL.md 格式）
+                if skills_prompt:
+                    prompt_parts.extend([
+                        "",
+                        "## 可用 Agent",
+                        skills_prompt,
+                        ""
+                    ])
+
                 return "\n".join([p for p in prompt_parts if p])
             else:
                 # 使用配置文件中的模板
@@ -174,7 +203,8 @@ class ContextBuilder:
                     soul_personality=personality,
                     role_title=role_title,
                     user_text=text_contents.get("user", ""),
-                    soul_text=text_contents.get("soul", "")
+                    soul_text=text_contents.get("soul", ""),
+                    skills_prompt=skills_prompt
                 )
 
         else:
