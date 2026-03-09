@@ -27,6 +27,8 @@ htmlcov/
 
 # Environment
 .env
+.env.local
+.env.*.local
 .venv
 venv/
 ENV/
@@ -35,56 +37,43 @@ ENV/
 *.log
 
 # ===== STORAGE - Runtime data =====
-# These are agent memory and conversation data - DO NOT COMMIT
-
-# Memory files (short-term and long-term) - auto-generated
-storage/memory/short_term/*/*.md
-storage/memory/short_term/*/*.json
-storage/memory/long_term/*/*.json
-
-# Handover memory
-storage/memory/handover/*.md
-storage/memory/handover/*.json
-
-# Conversation history
-storage/conversations/*/
-
-# Logs
-storage/logs/*.log
-storage/logs/*.jsonl
-
-# Network queue (runtime data)
+storage/memory/
+storage/conversations/
+storage/logs/
 storage/network/queue/
+storage/stream_states/
+storage/agent_states/
+storage/token_usage/
+storage/observability/
 
-# ===== WANG - Claude Code Config =====
-# Runtime data (auto-generated)
-
-# Token usage statistics
+# ===== WANG - Agent Config =====
+wang/agent-team/*/*.json
 wang/token_usage/*.json
 
-# Agent runtime data
-wang/agent-team/core_brain/*.json
-wang/agent-team/wangyue/*.json
-
-# Frontend test results
-frontend/test-results/
-frontend/playwright-report/
-
-# Frontend build
+# ===== BUILD & NODE =====
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
-frontend/src/components/logs/
+frontend/test-results/
+frontend/playwright-report/
 frontend/*.tsbuildinfo
 frontend/*.js
 frontend/*.d.ts
 !frontend/postcss.config.js
 !frontend/tailwind.config.js
 
-# Python test coverage
-htmlcov/
-.coverage
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
 
-# Scripts (runtime data)
+*.tsbuildinfo
+
+# ===== OTHER PROJECTS =====
+openclaw/
+
+# Scripts
 scripts/*.pyc
 scripts/__pycache__/

@@ -1,0 +1,46 @@
+# GitHub Labeler Configuration
+# Maps file paths to GitHub labels
+
+# Documentation
+docs/: docs
+docs/**/*: docs
+
+# Tests
+test/**/*: tests
+tests/**/*: tests
+
+# Skills
+skills/**/*: skills
+
+# Extensions
+extensions/**/*: extensions
+
+# Frontend
+frontend/**/*: frontend
+ui/**/*: frontend
+
+# Backend
+src/**/*: backend
+mul_agent/**/*: backend
+
+# Python
+*.py: python
+
+# TypeScript/JavaScript
+*.ts: typescript
+*.tsx: typescript
+*.js: javascript
+
+# Configuration
+*.toml: configuration
+*.json: configuration
+*.yaml: configuration
+*.yml: configuration
+
+# CI/CD
+.github/**/*: ci/cd
+.git-hooks/**/*: ci/cd
+
+# Security
+SECURITY.md: security
+*detect-secrets*: security

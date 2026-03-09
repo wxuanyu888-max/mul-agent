@@ -1,0 +1,16 @@
+# Git Pre-commit Hook
+
+# Check for secrets
+if command -v detect-secrets-hook &> /dev/null; then
+    detect-secrets-hook
+fi
+
+# Run type checking
+if command -v mypy &> /dev/null; then
+    echo "Running type checking..."
+fi
+
+# Run linting
+if command -v ruff &> /dev/null; then
+    ruff check --diff
+fi

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Mul-Agent",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#4F46E5",
+    "light": "#818CF8",
+    "dark": "#3730A3"
+  },
+  "topbarLinks": [
+    {
+      "name": "GitHub",
+      "url": "https://github.com/your-org/mul-agent"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Get Started",
+    "url": "/getting-started"
+  },
+  "tabs": [
+    {
+      "name": "文档",
+      "url": "docs"
+    }
+  ],
+  "anchors": [],
+  "navigation": [
+    {
+      "group": "快速开始",
+      "pages": [
+        "introduction",
+        "getting-started",
+        "installation"
+      ]
+    },
+    {
+      "group": "核心概念",
+      "pages": [
+        "concepts/agent",
+        "concepts/brain",
+        "concepts/tools",
+        "concepts/skills"
+      ]
+    },
+    {
+      "group": "使用指南",
+      "pages": [
+        "guide/chat",
+        "guide/workflow",
+        "guide/memory"
+      ]
+    },
+    {
+      "group": "API 参考",
+      "pages": [
+        "api/overview",
+        "api/endpoints",
+        "api/authentication"
+      ]
+    },
+    {
+      "group": "部署",
+      "pages": [
+        "deploy/local",
+        "deploy/production",
+        "deploy/docker"
+      ]
+    },
+    {
+      "group": "代码质量",
+      "pages": [
+        "CODE_QUALITY_AND_DOCS"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/your-org/mul-agent"
+  },
+  "api": {
+    "baseUrl": "http://localhost:8000"
+  },
+  "feedback": {
+    "suggestEdit": true,
+    "raiseIssue": true
+  },
+  "modeToggle": {
+    "default": "light"
+  }
+}

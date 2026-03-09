@@ -69,6 +69,21 @@ from .mmr import (
     temporal_decay_factor,
     apply_temporal_decay,
 )
+from .hybrid import (
+    HybridSource,
+    HybridVectorResult,
+    HybridKeywordResult,
+    HybridResult,
+    TemporalDecayConfig,
+    DEFAULT_MMR_CONFIG,
+    DEFAULT_TEMPORAL_DECAY_CONFIG,
+    build_fts_query,
+    bm25_rank_to_score,
+    merge_hybrid_results,
+    to_decay_lambda,
+    calculate_temporal_decay_multiplier,
+    apply_temporal_decay_to_score,
+)
 
 # FastAPI 路由
 from .memory_routes import router as memory_router
@@ -109,6 +124,20 @@ __all__ = [
     "text_similarity",
     "temporal_decay_factor",
     "apply_temporal_decay",
+    # Hybrid
+    "HybridSource",
+    "HybridVectorResult",
+    "HybridKeywordResult",
+    "HybridResult",
+    "TemporalDecayConfig",
+    "DEFAULT_MMR_CONFIG",
+    "DEFAULT_TEMPORAL_DECAY_CONFIG",
+    "build_fts_query",
+    "bm25_rank_to_score",
+    "merge_hybrid_results",
+    "to_decay_lambda",
+    "calculate_temporal_decay_multiplier",
+    "apply_temporal_decay_to_score",
     # Routes
     "memory_router",
 ]

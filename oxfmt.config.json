@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxfmt/main/schema.json",
+  "experimentalSortImports": {
+    "newlinesBetween": false
+  },
+  "experimentalSortPackageJson": {
+    "sortScripts": true
+  },
+  "tabWidth": 2,
+  "useTabs": false,
+  "ignorePatterns": [
+    "frontend/node_modules/",
+    "frontend/dist/",
+    "dist/",
+    "build/",
+    ".venv/",
+    "node_modules/",
+    "storage/",
+    "wang/",
+    "agents/",
+    "src/",
+    "packages/",
+    "skills/",
+    "openclaw/",
+    "*.py",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "docs/*.md",
+    "!docs/introduction.mdx",
+    "!docs/getting-started.mdx",
+    "!docs/installation.mdx",
+    "!docs/concepts/*.mdx",
+    "!docs/guide/*.mdx",
+    "!docs/api/*.mdx",
+    "!docs/deploy/*.mdx"
+  ]
+}

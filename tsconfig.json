@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "declarationMap": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noEmitOnError": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2023",
+    "useDefineForClassFields": false,
+    "paths": {
+      "@/*": ["./frontend/src/*"],
+      "@mul-agent/*": ["./mul_agent/*"],
+      "@skills/*": ["./skills/*"]
+    }
+  },
+  "include": [
+    "frontend/src/**/*",
+    "frontend/tests/**/*",
+    "mul_agent/**/*.pyi",
+    "skills/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    ".venv",
+    "storage",
+    "wang",
+    "agents",
+    "openclaw"
+  ]
+}
