@@ -16,7 +16,6 @@ skills/**/*: skills
 extensions/**/*: extensions
 
 # Frontend
-frontend/**/*: frontend
 ui/**/*: frontend
 
 # Backend

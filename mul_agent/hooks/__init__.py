@@ -1,33 +1,20 @@
-"""Hooks Module - 钩子系统
+"""Hooks System - 钩子系统
 
-钩子是在特定事件触发时执行的回调函数。
-支持：
-- PreToolUse: 工具执行前的拦截和验证
-- PostToolUse: 工具执行后的处理和日志
-- SessionStart: 会话开始时的初始化
-- SessionEnd: 会话结束时的清理
+钩子系统允许在特定事件发生时执行自定义逻辑。
+支持的事件类型：
+- pre_tool_use: 工具使用前
+- post_tool_use: 工具使用后
+- session_start: 会话开始时
+- session_end: 会话结束时
+- pre_message: 消息处理前
+- post_message: 消息处理后
 """
 
-from mul_agent.hooks.base import BaseHook, HookEvent, HookPriority
-from mul_agent.hooks.manager import HookManager
-from mul_agent.hooks.builtin import (
-    PreToolUseHook,
-    PostToolUseHook,
-    SessionStartHook,
-    SessionEndHook,
-    LogInvocationHook,
-    FormatOutputHook,
-)
+from .base import BaseHook, HookEvent
+from .manager import HookManager
 
 __all__ = [
     "BaseHook",
     "HookEvent",
-    "HookPriority",
     "HookManager",
-    "PreToolUseHook",
-    "PostToolUseHook",
-    "SessionStartHook",
-    "SessionEndHook",
-    "LogInvocationHook",
-    "FormatOutputHook",
 ]

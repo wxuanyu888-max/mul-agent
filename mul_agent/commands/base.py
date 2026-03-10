@@ -1,119 +1,68 @@
 """Base Command - 命令基类"""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-import time
+from typing import Any, Dict, List, Optional
 
 
-class CommandStatus(str, Enum):
+class CommandStatus(Enum):
     """命令执行状态"""
-
     SUCCESS = "success"
     ERROR = "error"
     NOT_FOUND = "not_found"
-    FORBIDDEN = "forbidden"
-
-
-@dataclass
-class CommandContext:
-    """命令上下文
-
-    Attributes:
-        command: 命令名称
-        args: 位置参数
-        kwargs: 关键字参数
-        agent_id: Agent ID
-        user_input: 原始用户输入
-        timestamp: 时间戳
-    """
-    command: str
-    args: List[Any] = field(default_factory=list)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
-    agent_id: str = "default"
-    user_input: str = ""
-    timestamp: float = field(default_factory=time.time)
-
-    def get_arg(self, index: int, default: Any = None) -> Any:
-        """获取位置参数"""
-        return self.args[index] if index < len(self.args) else default
-
-    def get_kwarg(self, key: str, default: Any = None) -> Any:
-        """获取关键字参数"""
-        return self.kwargs.get(key, default)
-
-    def has_arg(self, index: int) -> bool:
-        """检查是否有位置参数"""
-        return index < len(self.args)
+    INVALID_ARGS = "invalid_args"
 
 
 @dataclass
 class CommandResult:
-    """命令执行结果
-
-    Attributes:
-        status: 执行状态
-        message: 结果消息
-        data: 结果数据
-        error: 错误信息
-        usage: 用法提示
-    """
-    status: CommandStatus = CommandStatus.SUCCESS
-    message: str = ""
+    """命令执行结果"""
+    status: CommandStatus
     data: Any = None
-    error: str = None
-    usage: str = None
+    message: str = ""
+    error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
-        result = {
+        return {
             "status": self.status.value,
+            "data": self.data,
             "message": self.message,
+            "error": self.error,
         }
-        if self.data is not None:
-            result["data"] = self.data
-        if self.error:
-            result["error"] = self.error
-        if self.usage:
-            result["usage"] = self.usage
-        return result
 
-    @classmethod
-    def success(cls, message: str = "", data: Any = None) -> "CommandResult":
-        """创建成功结果"""
-        return cls(status=CommandStatus.SUCCESS, message=message, data=data)
 
-    @classmethod
-    def error(cls, message: str = "", error: str = None) -> "CommandResult":
-        """创建错误结果"""
-        return cls(status=CommandStatus.ERROR, message=message, error=error or message)
+@dataclass
+class CommandMetadata:
+    """命令元数据"""
+    command_id: str = ""
+    command_name: str = ""
+    command_description: str = ""
+    command_usage: str = ""
+    command_aliases: List[str] = None
+    command_examples: List[str] = None
+    enabled: bool = True
 
-    @classmethod
-    def not_found(cls, command: str) -> "CommandResult":
-        """创建未找到结果"""
-        return cls(
-            status=CommandStatus.NOT_FOUND,
-            message=f"Command not found: {command}",
-            usage=f"Use 'help' to see available commands"
-        )
+    def __post_init__(self):
+        if self.command_aliases is None:
+            self.command_aliases = []
+        if self.command_examples is None:
+            self.command_examples = []
 
 
 class BaseCommand(ABC):
     """所有命令的基类"""
 
-    # 命令元数据
+    # 命令元数据（类级别默认值）
     command_id: str = "base_command"
     command_name: str = "base"
     command_description: str = "Base command"
-    command_usage: str = "base [options]"
-    command_examples: List[str] = []
+    command_usage: str = "/base [args]"
     command_aliases: List[str] = []
+    command_examples: List[str] = []
 
-    # 命令配置
+    # 实例级别配置
     enabled: bool = True
-    requires_confirmation: bool = False
-    hidden: bool = False  # 是否在帮助中隐藏
 
     def __init__(self, config_manager=None, agent_id: str = None):
         """初始化命令
@@ -143,95 +92,118 @@ class BaseCommand(ABC):
             print(f"Error initializing command {self.command_id}: {e}")
             return False
 
-    @abstractmethod
     def _initialize(self) -> None:
-        """命令初始化逻辑（由子类实现）"""
+        """命令初始化逻辑（由子类覆盖）"""
         pass
 
+    def get_metadata(self) -> CommandMetadata:
+        """获取命令元数据
+
+        Returns:
+            CommandMetadata: 命令元数据
+        """
+        return CommandMetadata(
+            command_id=self.command_id,
+            command_name=self.command_name,
+            command_description=self.command_description,
+            command_usage=self.command_usage,
+            command_aliases=self.command_aliases.copy(),
+            command_examples=self.command_examples.copy(),
+            enabled=self.enabled,
+        )
+
     @abstractmethod
-    def execute(self, context: CommandContext) -> CommandResult:
+    def execute(self, args: str = "") -> CommandResult:
         """执行命令
 
         Args:
-            context: 命令上下文
+            args: 命令参数字符串
 
         Returns:
-            CommandResult: 执行结果
+            CommandResult: 命令执行结果
         """
         pass
 
+    def parse_args(self, args: str) -> Dict[str, Any]:
+        """解析命令参数
+
+        Args:
+            args: 命令参数字符串
+
+        Returns:
+            Dict: 解析后的参数
+        """
+        # 简单的空格分割，子类可以覆盖此方法实现更复杂的解析
+        if not args.strip():
+            return {}
+
+        parts = args.strip().split()
+        result = {}
+
+        i = 0
+        while i < len(parts):
+            if parts[i].startswith("--"):
+                key = parts[i][2:]
+                if i + 1 < len(parts) and not parts[i + 1].startswith("--"):
+                    result[key] = parts[i + 1]
+                    i += 2
+                else:
+                    result[key] = True
+                    i += 1
+            elif parts[i].startswith("-") and len(parts[i]) == 2:
+                key = parts[i][1:]
+                if i + 1 < len(parts) and not parts[i + 1].startswith("-"):
+                    result[key] = parts[i + 1]
+                    i += 2
+                else:
+                    result[key] = True
+                    i += 1
+            else:
+                # 位置参数
+                if "args" not in result:
+                    result["args"] = []
+                result["args"].append(parts[i])
+                i += 1
+
+        return result
+
     def get_help(self) -> str:
-        """获取帮助信息
+        """获取命令帮助信息
 
         Returns:
             str: 帮助信息
         """
-        help_text = [
+        lines = [
             f"Command: {self.command_name}",
             f"Description: {self.command_description}",
             f"Usage: {self.command_usage}",
         ]
 
         if self.command_aliases:
-            help_text.append(f"Aliases: {', '.join(self.command_aliases)}")
+            lines.append(f"Aliases: {', '.join(self.command_aliases)}")
 
         if self.command_examples:
-            help_text.append("\nExamples:")
+            lines.append("Examples:")
             for example in self.command_examples:
-                help_text.append(f"  {example}")
+                lines.append(f"  {example}")
 
-        return "\n".join(help_text)
+        return "\n".join(lines)
 
-    def get_metadata(self) -> Dict[str, Any]:
-        """获取命令元数据
+    def to_dict(self) -> Dict[str, Any]:
+        """将命令转换为字典
 
         Returns:
-            Dict: 命令元数据
+            Dict: 命令字典
         """
         return {
-            "command_id": self.command_id,
-            "command_name": self.command_name,
-            "command_description": self.command_description,
-            "command_usage": self.command_usage,
-            "command_aliases": self.command_aliases,
-            "enabled": self.enabled,
-            "hidden": self.hidden,
-            "requires_confirmation": self.requires_confirmation,
+            **self.get_metadata().__dict__,
+            "config_manager": self.config_manager.__class__.__name__ if self.config_manager else None,
         }
-
-    def parse_args(self, args_str: str) -> tuple:
-        """解析参数字符串
-
-        Args:
-            args_str: 参数字符串
-
-        Returns:
-            tuple: (args, kwargs)
-        """
-        import shlex
-
-        try:
-            parts = shlex.split(args_str)
-        except ValueError:
-            # Fallback to simple split
-            parts = args_str.split()
-
-        args = []
-        kwargs = {}
-
-        for part in parts:
-            if "=" in part:
-                key, value = part.split("=", 1)
-                kwargs[key] = value
-            else:
-                args.append(part)
-
-        return args, kwargs
 
     def __str__(self) -> str:
         """字符串表示"""
-        return f"{self.command_name}"
+        return f"{self.command_name} v1.0.0"
 
     def __repr__(self) -> str:
         """详细字符串表示"""
-        return f"<{self.__class__.__name__}(name={self.command_name})>"
+        return f"<{self.__class__.__name__}(id={self.command_id}, name={self.command_name})>"

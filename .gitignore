@@ -51,16 +51,16 @@ wang/agent-team/*/*.json
 wang/token_usage/*.json
 
 # ===== BUILD & NODE =====
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/test-results/
-frontend/playwright-report/
-frontend/*.tsbuildinfo
-frontend/*.js
-frontend/*.d.ts
-!frontend/postcss.config.js
-!frontend/tailwind.config.js
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/test-results/
+ui/playwright-report/
+ui/*.tsbuildinfo
+ui/*.js
+ui/*.d.ts
+!ui/postcss.config.js
+!ui/tailwind.config.js
 
 node_modules/
 npm-debug.log*

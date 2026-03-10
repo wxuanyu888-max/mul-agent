@@ -19,14 +19,14 @@
     "target": "ES2023",
     "useDefineForClassFields": false,
     "paths": {
-      "@/*": ["./frontend/src/*"],
+      "@/*": ["./ui/src/*"],
       "@mul-agent/*": ["./mul_agent/*"],
       "@skills/*": ["./skills/*"]
     }
   },
   "include": [
-    "frontend/src/**/*",
-    "frontend/tests/**/*",
+    "ui/src/**/*",
+    "ui/tests/**/*",
     "mul_agent/**/*.pyi",
     "skills/**/*.ts"
   ],

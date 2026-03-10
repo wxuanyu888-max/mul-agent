@@ -40,9 +40,9 @@
     "vitest/no-commented-out-tests": "error"
   },
   "ignorePatterns": [
-    "frontend/node_modules/",
-    "frontend/dist/",
-    "frontend/coverage/",
+    "ui/node_modules/",
+    "ui/dist/",
+    "ui/coverage/",
     "dist/",
     "build/",
     ".venv/",

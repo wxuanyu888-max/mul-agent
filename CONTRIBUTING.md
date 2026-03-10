@@ -38,7 +38,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 pip install -e ".[dev]"
 
 # Frontend dependencies
-cd frontend
+cd ui
 pnpm install
 ```
 
@@ -132,7 +132,7 @@ pytest tests/
 pytest tests/ --cov=mul_agent
 
 # Frontend tests
-cd frontend && pnpm test
+cd ui && pnpm test
 
 # E2E tests
 pnpm test:e2e

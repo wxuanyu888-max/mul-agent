@@ -42,7 +42,7 @@ repos:
       # oxlint
       - id: oxlint
         name: oxlint
-        entry: pnpm exec oxlint frontend/src frontend/tests
+        entry: pnpm exec oxlint ui/src ui/tests
         language: system
         pass_filenames: false
         types_or: [typescript, tsx]
@@ -50,7 +50,7 @@ repos:
       # oxfmt
       - id: oxfmt
         name: oxfmt
-        entry: pnpm exec oxfmt check frontend/src frontend/tests
+        entry: pnpm exec oxfmt check ui/src ui/tests
         language: system
         pass_filenames: false
         types_or: [typescript, tsx]

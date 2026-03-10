@@ -41,9 +41,9 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "lint:ci": "oxlint --format=github",
-    "format": "oxfmt write frontend/**/*.ts frontend/**/*.tsx",
-    "format:check": "oxfmt check frontend/**/*.ts frontend/**/*.tsx",
-    "format:write": "oxfmt write frontend/**/*.ts frontend/**/*.tsx",
+    "format": "oxfmt write ui/**/*.ts ui/**/*.tsx",
+    "format:check": "oxfmt check ui/**/*.ts ui/**/*.tsx",
+    "format:write": "oxfmt write ui/**/*.ts ui/**/*.tsx",
     "check": "pnpm lint && pnpm format:check",
     "typecheck": "tsc -b --noEmit",
     "clean": "rm -rf dist node_modules/.cache"

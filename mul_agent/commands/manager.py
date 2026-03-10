@@ -1,27 +1,15 @@
 """Command Manager - 命令管理器"""
 
-import importlib
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Callable
-import re
+import inspect
+from typing import Any, Dict, List, Optional, Type
 
-try:
-    import yaml
-    HAS_YAML = True
-except ImportError:
-    HAS_YAML = False
-
-from mul_agent.commands.base import BaseCommand, CommandContext, CommandResult, CommandStatus
+from .base import BaseCommand, CommandResult, CommandStatus, CommandMetadata
 
 
 class CommandManager:
     """命令管理器
 
-    负责：
-    - 注册命令
-    - 执行命令
-    - 命令帮助
-    - 从配置文件加载命令
+    负责注册、管理和执行命令
     """
 
     def __init__(self, config_manager=None, agent_id: str = None):
@@ -32,370 +20,285 @@ class CommandManager:
             agent_id: Agent ID
         """
         self.config_manager = config_manager
-        self.agent_id = agent_id or "wangyue"
-
-        # 已注册的命令
-        self._commands: Dict[str, BaseCommand] = {}
-
-        # 命令别名映射
-        self._aliases: Dict[str, str] = {}
-
-        # 命令元数据缓存
-        self._command_metadata: Dict[str, Dict[str, Any]] = {}
-
-        # 加载内置命令和配置文件命令
+        self.agent_id = agent_id or "default"
+        self._commands: Dict[str, BaseCommand] = {}  # command_id -> instance
+        self._command_names: Dict[str, str] = {}  # command_name -> command_id
+        self._command_aliases: Dict[str, str] = {}  # alias -> command_id
         self._load_builtin_commands()
-        self._load_command_configs()
 
     def _load_builtin_commands(self) -> None:
         """加载内置命令"""
-        builtin_commands = [
-            "mul_agent.commands.builtin.HelpCommand",
-            "mul_agent.commands.builtin.StatusCommand",
-            "mul_agent.commands.builtin.ListCommand",
-            "mul_agent.commands.builtin.SkillCommand",
-            "mul_agent.commands.builtin.HookCommand",
-            "mul_agent.commands.builtin.MemoryCommand",
-            "mul_agent.commands.builtin.BashCommand",
-            "mul_agent.commands.builtin.PermissionCommand",
-            # Claude Code 风格命令
-            "mul_agent.commands.builtin.TddCommand",
-            "mul_agent.commands.builtin.CodeReviewCommand",
-            "mul_agent.commands.builtin.BuildFixCommand",
-            "mul_agent.commands.builtin.VerifyCommand",
-            "mul_agent.commands.builtin.TestCoverageCommand",
-            "mul_agent.commands.builtin.SecurityScanCommand",
-            "mul_agent.commands.builtin.PlanCommand",
-            "mul_agent.commands.builtin.E2eCommand",
-            # 对话管理命令
-            "mul_agent.commands.dialog.HistoryCommand",
-            "mul_agent.commands.dialog.UndoCommand",
-            "mul_agent.commands.dialog.SummaryCommand",
-            "mul_agent.commands.dialog.ClearCommand",
-            "mul_agent.commands.dialog.ResumeCommand",
-            "mul_agent.commands.dialog.ContextCommand",
-            "mul_agent.commands.dialog.TokenCommand",
-            # MCP 命令
-            "mul_agent.commands.builtin.MCPCommand",
-            # 学习命令
-            "mul_agent.commands.builtin.LearnCommand",
-            # 代码搜索命令
-            "mul_agent.commands.builtin.SearchCommand",
-            "mul_agent.commands.builtin.CodeIndexCommand",
-            # 可观测性命令
-            "mul_agent.commands.builtin.ObserveCommand",
-            # 检查点命令
-            "mul_agent.commands.builtin.CheckpointCommand",
-        ]
-
-        for command_path in builtin_commands:
-            try:
-                module_path, class_name = command_path.rsplit(".", 1)
-                module = importlib.import_module(module_path)
-                command_class = getattr(module, class_name)
-                self.register_command(command_class)
-            except Exception as e:
-                print(f"Error loading builtin command {command_path}: {e}")
-
-    def _load_command_configs(self) -> None:
-        """从配置加载命令"""
         try:
-            # 从 soul.md 或 user.md 中加载命令配置
-            soul_config = self.config_manager.load(self.agent_id, "soul")
-            commands_config = soul_config.get("commands", [])
+            from . import builtin
+            # 自动注册 builtin 模块中的所有 Command 类
+            for name, obj in inspect.getmembers(builtin):
+                if (inspect.isclass(obj) and
+                    issubclass(obj, BaseCommand) and
+                    obj != BaseCommand and
+                    hasattr(obj, 'command_id')):
+                    self.register_command(obj)
+        except ImportError:
+            pass  # builtin 模块可能不存在
 
-            for command_data in commands_config:
-                command_id = command_data.get("id")
-                enabled = command_data.get("enabled", True)
-
-                if not enabled:
-                    continue
-
-                # 尝试加载动态命令
-                module_path = command_data.get("module_path")
-                if module_path:
-                    try:
-                        module = importlib.import_module(module_path)
-                        class_name = command_data.get("class_name", "DynamicCommand")
-                        command_class = getattr(module, class_name)
-                        self.register_command(command_class)
-                    except Exception as e:
-                        print(f"Error loading dynamic command {module_path}: {e}")
-        except Exception as e:
-            print(f"Error loading command configs: {e}")
-
-    def register_command(
-        self,
-        command_class: Type[BaseCommand],
-        instance: BaseCommand = None,
-        aliases: List[str] = None
-    ) -> str:
+    def register_command(self, command_class: Type[BaseCommand], instance: Optional[BaseCommand] = None) -> Optional[str]:
         """注册命令
 
         Args:
             command_class: 命令类
-            instance: 命令实例（如果为 None 则自动创建）
-            aliases: 命令别名
+            instance: 可选的命令实例，如果不提供则创建新实例
 
         Returns:
-            str: 命令 ID
+            Optional[str]: 命令 ID，如果注册失败返回 None
         """
-        if instance is None:
-            instance = command_class(
+        try:
+            # 创建或使用了提供的实例
+            command_instance = instance if instance is not None else command_class(
                 config_manager=self.config_manager,
                 agent_id=self.agent_id
             )
 
-        # 初始化命令
-        if not instance.initialize():
-            raise ValueError(f"Failed to initialize command {instance.command_id}")
+            # 初始化命令
+            if not command_instance.initialize():
+                print(f"Failed to initialize command: {command_class.command_id}")
+                return None
 
-        # 注册命令
-        self._commands[instance.command_name] = instance
-        self._command_metadata[instance.command_name] = instance.get_metadata()
+            # 检查是否已存在
+            if command_instance.command_id in self._commands:
+                print(f"Command already registered: {command_instance.command_id}")
+                return command_instance.command_id
 
-        # 注册别名
-        all_aliases = aliases or instance.command_aliases
-        for alias in all_aliases:
-            self._aliases[alias] = instance.command_name
+            # 注册命令实例
+            self._commands[command_instance.command_id] = command_instance
+            self._command_names[command_instance.command_name] = command_instance.command_id
 
-        return instance.command_name
+            # 注册别名
+            for alias in command_instance.command_aliases:
+                self._command_aliases[alias] = command_instance.command_id
 
-    def unregister_command(self, command_name: str) -> bool:
-        """注销命令"""
-        if command_name in self._commands:
-            del self._commands[command_name]
-        if command_name in self._command_metadata:
-            del self._command_metadata[command_name]
+            return command_instance.command_id
 
-        # 清理别名
-        aliases_to_remove = [
-            alias for alias, cmd in self._aliases.items()
-            if cmd == command_name
-        ]
-        for alias in aliases_to_remove:
-            del self._aliases[alias]
+        except Exception as e:
+            print(f"Error registering command {command_class.command_id}: {e}")
+            return None
 
+    def unregister_command(self, command_id: str) -> bool:
+        """注销命令
+
+        Args:
+            command_id: 命令 ID
+
+        Returns:
+            bool: 是否注销成功
+        """
+        if command_id not in self._commands:
+            return False
+
+        command = self._commands[command_id]
+
+        # 从名称映射中移除
+        if command.command_name in self._command_names:
+            del self._command_names[command.command_name]
+
+        # 从别名映射中移除
+        for alias in command.command_aliases:
+            if alias in self._command_aliases:
+                del self._command_aliases[alias]
+
+        # 删除命令实例
+        del self._commands[command_id]
         return True
 
-    def execute(self, command_name: str, args_str: str = "") -> CommandResult:
-        """执行命令
+    def get_command(self, command_id: str) -> Optional[BaseCommand]:
+        """获取命令
 
         Args:
-            command_name: 命令名称
-            args_str: 参数字符串
+            command_id: 命令 ID
 
         Returns:
-            CommandResult: 执行结果
+            Optional[BaseCommand]: 命令实例，如果不存在返回 None
         """
-        # 解析别名
-        actual_command = self._aliases.get(command_name, command_name)
+        return self._commands.get(command_id)
 
-        # 查找命令
-        command = self._commands.get(actual_command)
-        if not command:
-            return CommandResult.not_found(command_name)
-
-        if not command.enabled:
-            return CommandResult.error(
-                message=f"Command is disabled: {command_name}",
-                error="Command is disabled"
-            )
-
-        # 解析参数
-        args, kwargs = command.parse_args(args_str)
-
-        # 创建上下文
-        context = CommandContext(
-            command=actual_command,
-            args=args,
-            kwargs=kwargs,
-            agent_id=self.agent_id,
-            user_input=f"{command_name} {args_str}"
-        )
-
-        # 执行命令
-        try:
-            result = command.execute(context)
-            return result
-        except Exception as e:
-            return CommandResult.error(
-                message=f"Error executing command: {command_name}",
-                error=str(e)
-            )
-
-    def execute_from_input(self, user_input: str) -> CommandResult:
-        """从用户输入执行命令
+    def get_command_by_name(self, name: str) -> Optional[BaseCommand]:
+        """根据名称获取命令
 
         Args:
-            user_input: 用户输入（如 "help skill"）
+            name: 命令名称或别名
 
         Returns:
-            CommandResult: 执行结果
+            Optional[BaseCommand]: 命令实例，如果不存在返回 None
         """
-        user_input = user_input.strip()
+        # 先查找名称
+        command_id = self._command_names.get(name)
+        if command_id:
+            return self._commands.get(command_id)
 
-        # 检测命令前缀
-        command_prefixes = ["/", "!"]
-        command_name = user_input
+        # 再查找别名
+        command_id = self._command_aliases.get(name)
+        if command_id:
+            return self._commands.get(command_id)
 
-        for prefix in command_prefixes:
-            if user_input.startswith(prefix):
-                command_name = user_input[len(prefix):].strip()
-                break
+        return None
 
-        # 分割命令和参数
-        parts = command_name.split(None, 1)
-        cmd = parts[0] if parts else ""
-        args = parts[1] if len(parts) > 1 else ""
-
-        return self.execute(cmd, args)
-
-    def get_command(self, command_name: str) -> Optional[BaseCommand]:
-        """获取命令实例"""
-        actual_command = self._aliases.get(command_name, command_name)
-        return self._commands.get(actual_command)
-
-    def list_commands(self, include_hidden: bool = False) -> List[Dict[str, Any]]:
-        """列出所有命令
-
-        Args:
-            include_hidden: 是否包含隐藏命令
+    def list_commands(self) -> List[Dict[str, Any]]:
+        """列出所有已注册的命令
 
         Returns:
             List[Dict]: 命令元数据列表
         """
-        commands = []
-        for name, metadata in self._command_metadata.items():
-            if not include_hidden and metadata.get("hidden", False):
-                continue
-            commands.append(metadata)
-        return sorted(commands, key=lambda x: x.get("command_name", ""))
+        return [cmd.get_metadata().__dict__ for cmd in self._commands.values()]
 
-    def search_commands(self, query: str) -> List[Dict[str, Any]]:
-        """搜索命令
+    def execute(self, command_name: str, args: str = "") -> CommandResult:
+        """执行命令
 
         Args:
-            query: 搜索关键词
+            command_name: 命令名称
+            args: 命令参数
 
         Returns:
-            List[Dict]: 匹配的命令元数据
+            CommandResult: 命令执行结果
         """
-        results = []
-        query_lower = query.lower()
+        command = self.get_command_by_name(command_name)
 
-        for name, metadata in self._command_metadata.items():
-            score = 0
+        if not command:
+            return CommandResult(
+                status=CommandStatus.NOT_FOUND,
+                message=f"Command not found: {command_name}"
+            )
 
-            if query_lower in name.lower():
-                score += 10
-            if query_lower in metadata.get("command_description", "").lower():
-                score += 5
+        if not command.enabled:
+            return CommandResult(
+                status=CommandStatus.ERROR,
+                message=f"Command is disabled: {command_name}"
+            )
 
-            if score > 0:
-                results.append({**metadata, "relevance_score": score})
+        try:
+            result = command.execute(args)
+            return result
+        except Exception as e:
+            return CommandResult(
+                status=CommandStatus.ERROR,
+                error=str(e),
+                message=f"Error executing command: {e}"
+            )
 
-        return sorted(results, key=lambda x: x.get("relevance_score", 0), reverse=True)
+    def execute_from_input(self, input_text: str) -> CommandResult:
+        """从输入文本执行命令
 
-    def get_help(self, command_name: str = None) -> str:
+        支持格式：
+        - /command args
+        - !command args
+        - command args
+
+        Args:
+            input_text: 输入文本
+
+        Returns:
+            CommandResult: 命令执行结果
+        """
+        input_text = input_text.strip()
+
+        if not input_text:
+            return CommandResult(
+                status=CommandStatus.INVALID_ARGS,
+                message="Empty command input"
+            )
+
+        # 解析命令和参数
+        parts = input_text.split(None, 1)
+        command_name = parts[0]
+        args = parts[1] if len(parts) > 1 else ""
+
+        # 移除前缀 / 或 !
+        if command_name.startswith("/") or command_name.startswith("!"):
+            command_name = command_name[1:]
+
+        return self.execute(command_name, args)
+
+    def get_help(self, command_name: Optional[str] = None) -> str:
         """获取帮助信息
 
         Args:
-            command_name: 命令名称（可选，如果为 None 则返回所有命令的帮助）
+            command_name: 可选的命令名称，如果不提供则返回所有命令列表
 
         Returns:
             str: 帮助信息
         """
         if command_name:
-            command = self.get_command(command_name)
+            command = self.get_command_by_name(command_name)
             if command:
                 return command.get_help()
             return f"Command not found: {command_name}"
 
-        # 返回所有命令的帮助
-        help_text = ["Available commands:\n"]
+        # 返回所有命令列表
+        lines = ["Available commands:", ""]
+        for cmd in self._commands.values():
+            if cmd.enabled:
+                lines.append(f"  /{cmd.command_name} - {cmd.command_description}")
+        return "\n".join(lines)
 
-        commands = self.list_commands()
-        for cmd in commands:
-            aliases = cmd.get("command_aliases", [])
-            alias_str = f" ({', '.join(aliases)})" if aliases else ""
-            help_text.append(f"  {cmd['command_name']}{alias_str}")
-            help_text.append(f"    {cmd['command_description']}")
+    # =========================================================================
+    # 管理方法
+    # =========================================================================
 
-        help_text.append("\nUse '/help <command>' for more details")
-
-        return "\n".join(help_text)
-
-    def enable_command(self, command_name: str) -> bool:
-        """启用命令"""
-        command = self.get_command(command_name)
-        if command:
-            command.enabled = True
-            self._command_metadata[command_name]["enabled"] = True
-            return True
-        return False
-
-    def disable_command(self, command_name: str) -> bool:
-        """禁用命令"""
-        command = self.get_command(command_name)
-        if command:
-            command.enabled = False
-            self._command_metadata[command_name]["enabled"] = False
-            return True
-        return False
-
-    def add_command_function(
-        self,
-        command_name: str,
-        callback: Callable[[CommandContext], CommandResult],
-        description: str = "",
-        usage: str = "",
-        aliases: List[str] = None
-    ) -> str:
-        """添加函数命令
+    def enable_command(self, command_id: str) -> bool:
+        """启用命令
 
         Args:
-            command_name: 命令名称
-            callback: 回调函数
-            description: 描述
-            usage: 用法
-            aliases: 别名
+            command_id: 命令 ID
 
         Returns:
-            str: 命令 ID
+            bool: 是否成功启用
         """
-        from mul_agent.commands.base import BaseCommand
+        command = self.get_command(command_id)
+        if command:
+            command.enabled = True
+            return True
+        return False
 
-        # 创建动态命令类
-        class FunctionCommand(BaseCommand):
-            def __init__(self, callback, name, description, usage, aliases):
-                self.callback = callback
-                self._name = name
-                self._description = description
-                self._usage = usage
-                self._aliases = aliases
-                self._command_id = f"function_{name}"
-                super().__init__()
+    def disable_command(self, command_id: str) -> bool:
+        """禁用命令
 
-            command_id = property(lambda self: self._command_id)
-            command_name = property(lambda self: self._name)
-            command_description = property(lambda self: self._description)
-            command_usage = property(lambda self: self._usage)
-            command_aliases = property(lambda self: self._aliases or [])
+        Args:
+            command_id: 命令 ID
 
-            def _initialize(self):
-                pass
+        Returns:
+            bool: 是否成功禁用
+        """
+        command = self.get_command(command_id)
+        if command:
+            command.enabled = False
+            return True
+        return False
 
-            def execute(self, context):
-                return self.callback(context)
+    def reload_all(self) -> None:
+        """重新加载所有命令"""
+        # 清空所有命令
+        self._commands.clear()
+        self._command_names.clear()
+        self._command_aliases.clear()
 
-        return self.register_command(FunctionCommand, None, aliases)
+        # 重新加载内置命令
+        self._load_builtin_commands()
 
     def to_dict(self) -> Dict[str, Any]:
-        """将命令管理器状态转换为字典"""
+        """将命令管理器转换为字典
+
+        Returns:
+            Dict: 命令管理器字典
+        """
         return {
             "agent_id": self.agent_id,
             "commands_count": len(self._commands),
             "commands": self.list_commands(),
-            "aliases": self._aliases,
+            "command_names": self._command_names.copy(),
+            "command_aliases": self._command_aliases.copy(),
         }
+
+    def __str__(self) -> str:
+        """字符串表示"""
+        return f"CommandManager(agent_id={self.agent_id}, commands={len(self._commands)})"
+
+    def __repr__(self) -> str:
+        """详细字符串表示"""
+        return f"<CommandManager(agent_id='{self.agent_id}', commands={len(self._commands)})>"

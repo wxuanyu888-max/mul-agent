@@ -2,56 +2,55 @@
 
 > A multi-agent collaboration system powered by AI
 
-[![CI](https://github.com/your-org/mul-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/mul-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
 - 🤖 **Multi-Agent Collaboration** - Multiple agents working together with specialized roles
 - 🧠 **Intelligent Routing** - Automatic task routing to appropriate agents
-- 🛠️ **Extensible Tools** - Rich built-in tool system
-- 📝 **Memory Management** - Persistent state and memory
+- 🛠️ **Extensible Tools** - Rich built-in tool system based on OpenClaw architecture
+- 📝 **Memory Management** - Persistent state and memory with embedding support
 - 💻 **Web UI** - React-based frontend for agent interaction
+- 📚 **Skill System** - 50+ pre-built skills for common tasks
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.13+
 - Node.js 22+
 - pnpm
+- Python 3.10+ (optional, for memory embeddings)
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/mul-agent.git
+git clone https://github.com/mul-agent/mul-agent.git
 cd mul-agent
-
-# Install Python dependencies
-pip install -r requirements.txt
 
 # Install Node.js dependencies
 pnpm install
+
+# (Optional) Install Python dependencies for memory features
+pip install -e .
 ```
 
 ### Usage
 
 ```bash
-# Start the agent service
-python -m mul_agent.main
+# Start the development server
+pnpm dev
 
-# Start the frontend (in another terminal)
-cd frontend && pnpm dev
+# The agent will be available at http://localhost:5173
 ```
 
 ## Documentation
 
-Visit our [documentation](https://docs.your-org.com/mul-agent) for detailed guides.
+Visit our [documentation](docs/) for detailed guides.
 
-- [Getting Started](docs/getting-started.mdx)
-- [Installation Guide](docs/installation.mdx)
-- [Agent Concepts](docs/concepts/agent.mdx)
+- [快速开始](docs/快速开始.md)
+- [架构说明](docs/ARCHITECTURE.md)
+- [技能系统](docs/skills/)
 
 ## Development
 
@@ -59,20 +58,18 @@ Visit our [documentation](https://docs.your-org.com/mul-agent) for detailed guid
 
 ```bash
 # Run all checks
-./scripts/quality-check.sh
+pnpm check
 
 # Individual checks
 pnpm lint              # TypeScript lint
-pnpm format:check      # TypeScript format
-ruff check mul_agent/  # Python lint
+pnpm format:check      # TypeScript format check
+pnpm format:write      # Format code
+pnpm typecheck         # TypeScript type check
 ```
 
 ### Testing
 
 ```bash
-# Python tests
-pytest tests/
-
 # Frontend tests
 pnpm test
 
@@ -84,8 +81,14 @@ pnpm test:e2e
 
 ```
 mul-agent/
-├── mul_agent/          # Python backend
-├── frontend/           # React frontend
+├── src/                # Main TypeScript codebase (OpenClaw-based)
+│   ├── agents/         # Agent system
+│   ├── memory/         # Memory and embeddings
+│   ├── skills/         # Skill definitions
+│   ├── tools/          # Tool implementations
+│   └── ...
+├── skills/             # Skill definitions (52 skills)
+├── ui/                 # React frontend
 ├── docs/               # Documentation
 ├── tests/              # Tests
 ├── scripts/            # Utility scripts
@@ -96,16 +99,30 @@ mul-agent/
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Python 3.13, FastAPI |
-| Frontend | React 19, TypeScript, Vite |
-| Testing | pytest, Vitest, Playwright |
-| Linting | Ruff, Oxlint, Oxfmt |
-| Docs | Mintlify |
+| **Core** | TypeScript, Node.js |
+| **Frontend** | React 19, TypeScript, Vite |
+| **Memory** | Python embeddings, SQLite-vec |
+| **Testing** | Vitest, Playwright, pytest |
+| **Linting** | Oxlint, Oxfmt, Ruff |
+| **Docs** | Mintlify |
+
+## Skills System
+
+The project includes 52+ pre-built skills:
+
+- **Development**: github, git, coding-agent
+- **Communication**: discord, slack, telegram, whatsapp
+- **Productivity**: notion, obsidian, trello, things-mac
+- **Media**: openai-image-gen, openai-whisper, video-frames
+- **System**: tmux, 1password, bear-notes, apple-reminders
+
+See [skills/](skills/) for the full list.
 
 ## License
 
-MIT © [your-org](https://github.com/your-org)
+MIT © mul-agent team
 
 ## Acknowledgments
 
-- Inspired by [OpenClaw](https://github.com/openclaw/openclaw) project
+- Based on [OpenClaw](https://github.com/openclaw/openclaw) architecture
+- Inspired by Claude Code and Pi coding agent

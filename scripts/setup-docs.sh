@@ -24,9 +24,9 @@ fi
 echo "📦 安装项目依赖..."
 pnpm install
 
-# 安装 frontend 依赖
+# 安装 ui 依赖
 echo "📦 安装 Frontend 依赖..."
-cd frontend && pnpm install && cd ..
+cd ui && pnpm install && cd ..
 
 # 创建文档目录结构
 echo "📁 创建文档目录结构..."

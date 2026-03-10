@@ -23,7 +23,7 @@ python -m mul_agent.main
 pnpm install
 
 # Start frontend dev server
-cd frontend && pnpm dev
+cd ui && pnpm dev
 
 # Run tests
 pnpm test
@@ -43,7 +43,7 @@ mul-agent/
 │   ├── tools/              # Built-in tools
 │   └── commands/           # Command system
 │
-├── frontend/               # React + TypeScript UI
+├── ui/                     # React + TypeScript UI
 │   ├── src/
 │   │   ├── components/
 │   │   ├── services/
@@ -129,7 +129,7 @@ pytest tests/test_router.py -v
 
 ```bash
 # Run tests
-cd frontend && pnpm test
+cd ui && pnpm test
 
 # Run once and exit
 pnpm test:run
@@ -236,7 +236,7 @@ docker run -p 8000:8000 mul-agent
 
 ### Production
 
-1. Build frontend: `cd frontend && pnpm build`
+1. Build frontend: `cd ui && pnpm build`
 2. Install Python deps: `pip install -e .`
 3. Set environment variables
 4. Start: `python -m mul_agent.main`
